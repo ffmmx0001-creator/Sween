@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import google.generativeai as genai
 
-BOT_TOKEN = os.environ.get("8690035524:AAGrORyu8MKUQw1uZwM3h8Om_z5kmWEdZdM", "")
+BOT_TOKEN = os.environ.get("8690035524:AAGroryu8mkuqw1uzwm3h8om_z5kmwedzdm", "")
 ADMIN_ID = int(os.environ.get("7088023034", "0"))
 GEMINI_API_KEY = os.environ.get("AIzaSyDGVKM5ZS02KCUOqH_YRoth6dA4DLUAM8E", "")
 
