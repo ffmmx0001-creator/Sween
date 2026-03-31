@@ -315,7 +315,7 @@ def add_handlers(app):
 
 if __name__ == "__main__":
     load_data()
-    app = ApplicationBuilder().token(8690035524:AAGrORyu8MKUQw1uZwM3h8Om_z5kmWEdZdM).build()
+    app = ApplicationBuilder().token(8659193971:AAHC0IzEeiC5n_bvbMdy_T89SHEMC-22W8c).build()
     add_handlers(app)
     print("✅ Sinzhu Bot Starting...")
     app.run_polling(drop_pending_updates=True)
