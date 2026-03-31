@@ -131,9 +131,7 @@ async def clone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         clone_app = ApplicationBuilder().token(token).build()
         add_handlers(clone_app)
-        await clone_app.initialize()
-        await clone_app.start()
-        await clone_app.updater.start_polling()
+       asyncio.create_task(clone_app.run_polling(drop_pending_updates=True))
         clones[token] = {"app": clone_app, "owner": user.id}
         await update.message.reply_text(f"✅ Clone ho gaya! Token: `{token[:15]}...`", parse_mode="Markdown")
     except Exception as e:
