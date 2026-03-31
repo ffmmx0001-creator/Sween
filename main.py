@@ -142,9 +142,7 @@ async def dclone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     to_remove = [t for t,d in clones.items() if d["owner"] == user.id]
     for token in to_remove:
         try:
-            app = clones[token]["app"]
-            await app.updater.stop()
-            await app.stop()
+            app = clones[token]["app"]   
             del clones[token]
         except: pass
     await update.message.reply_text(f"✅ {len(to_remove)} clone(s) hata diye!")
