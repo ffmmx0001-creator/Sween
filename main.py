@@ -12,6 +12,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 users_started = set()
 groups = set()
 chat_enabled = defaultdict(lambda: True)
+clones = {}
 reply_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 recent_group_users = defaultdict(set)
 gfbf_data = {}
@@ -122,6 +123,54 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             failed += 1
         await asyncio.sleep(0.05)
     await msg.reply_text(f"✅ Broadcast done!\nSent: {sent} | Failed: {failed}")
+
+async def clone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not context.args:
+        await update.message.reply_text("Usage: /clone <bot_token>")
+        return
+    token = context.args[0]
+    if token in clones:
+        await update.message.reply_text("Yeh bot pehle se clone hai!")
+        return
+    try:
+        clone_app = ApplicationBuilder().token(token).build()
+        add_handlers(clone_app)
+        asyncio.create_task(clone_app.run_polling(drop_pending_updates=True))
+        clones[token] = {"app": clone_app, "owner": user.id}
+        await update.message.reply_text(f"✅ Clone ho gaya! Token: `{token[:15]}...`", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Clone failed: {str(e)[:100]}")
+
+async def dclone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    to_remove = [t for t, d in clones.items() if d["owner"] == user.id]
+    for token in to_remove:
+        try:
+            del clones[token]
+        except:
+            pass
+    await update.message.reply_text(f"✅ {len(to_remove)} clone(s) hata diye!")
+
+async def bbcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Sirf admin ke liye!")
+        return
+    msg = update.message
+    sent = 0
+    for token, data in clones.items():
+        app = data["app"]
+        for uid in users_started:
+            try:
+                if msg.reply_to_message:
+                    await msg.reply_to_message.copy(chat_id=uid)
+                else:
+                    await app.bot.send_message(uid, " ".join(context.args) if context.args else "Hello!")
+                sent += 1
+            except:
+                pass
+            await asyncio.sleep(0.05)
+    await msg.reply_text(f"✅ Admin bcast done via {len(clones)} clones! ~{sent} messages")
 
 async def gfbf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -243,6 +292,9 @@ def add_handlers(app):
     app.add_handler(CommandHandler(["CHATON","chaton"], chaton))
     app.add_handler(CommandHandler(["CHATOFF","chatoff"], chatoff))
     app.add_handler(CommandHandler(["broadcast","bcast"], broadcast))
+    app.add_handler(CommandHandler("clone", clone_cmd))
+    app.add_handler(CommandHandler("dclone", dclone_cmd))
+    app.add_handler(CommandHandler("bbcast", bbcast))
     app.add_handler(CommandHandler(["GfBF","gfbf","GFBF"], gfbf_cmd))
     app.add_handler(CommandHandler(["CGFBF","cgfbf"], cgfbf_cmd))
     app.add_handler(CommandHandler(["BFF","bff"], bff_cmd))
