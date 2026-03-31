@@ -313,9 +313,5 @@ def add_handlers(app):
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-if __name__ == "__main__":
-    load_data()
-    app = ApplicationBuilder().token(8690035524:AAGroryu8mkuqw1uzwm3h8om_z5kmwedzdm).build()
-    add_handlers(app)
     print("✅ Sinzhu Bot Starting...")
     app.run_polling(drop_pending_updates=True)
