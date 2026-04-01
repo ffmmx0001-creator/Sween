@@ -460,7 +460,12 @@ async def caplist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 async def dcap_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_use    try:
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /dcap <id>")
+        return
+    try:
         member = await chat.get_member(user.id)
         if member.status in ["administrator","creator"] or user.id == ADMIN_ID:
             chat_enabled[chat.id] = False
