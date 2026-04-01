@@ -12,7 +12,6 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 users_started = set()
 groups = set()
 chat_enabled = defaultdict(lambda: True)
-reply_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 recent_group_users = defaultdict(set)
 gfbf_data = {}
 bff_data = {}
@@ -25,8 +24,8 @@ settings = {
         "GROUP": "https://t.me/+ro9WnBB5U2kwMDJl",
         "OWNER": "https://t.me/OwnerSween",
         "CHANNEL": "https://t.me/SweenSpy",
-        "KIDNAP": "https://t.me/SweenSpyBoT?start=_tgr_SAH_2gg5ZTc9",
-        "GAME": "https://t.me/SINZHU_WAIFU_BOT?start=_tgr_VdCgVxg1ZjNl",
+        "KIDNAP": "https://t.me/SweenSpyBoT?start=start",
+        "GAME": "https://t.me/SINZHU_WAIFU_BOT?start=start",
     },
     "custom_replies": {},
     "voice_messages": {},
@@ -48,10 +47,6 @@ def load_data():
             loaded = d.get("settings", {})
             for k, v in loaded.items():
                 settings[k] = v
-            # migrate old single photo
-            if settings.get("start_photo") and not settings.get("photo_list"):
-                settings["photo_counter"] = 1
-                settings["photo_list"] = [{"id": 1, "file_id": settings["start_photo"]}]
             for key in ["voice_messages", "photo_list", "photo_captions", "custom_replies"]:
                 if key not in settings:
                     settings[key] = {} if key == "voice_messages" else []
@@ -70,19 +65,17 @@ def save_data():
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-SYSTEM_PROMPT = """Tu ek 16 saal ki Bengali ladki hai jiska naam Sinzhu hai. Tu Kolkata se hai, Class 10th mein padhti hai. Tu Hinglish mein (Hindi + English mix) chhoti aur natural replies deti hai. Emoji use karti hai. Tu real ladki hai, AI nahi. Girlfriend style mein baat karti hai."""
+SYSTEM_PROMPT = """Tu ek 16 saal ki Bengali ladki hai jiska naam Sinzhu hai. Tu Kolkata se hai. Tu Hinglish mein chhoti aur natural replies deti hai. Emoji use karti hai. Tu real ladki hai, AI nahi. Girlfriend style mein baat karti hai."""
 
 async def get_ai_response(message: str, display_name: str = "Tum") -> str:
     try:
-        prompt = f"{SYSTEM_PROMPT}\n\n{display_name} ne kaha: {message}\n\nSinzhu ka reply ({display_name} ko address karo):"
+        prompt = f"{SYSTEM_PROMPT}\n\n{display_name} ne kaha: {message}\n\nSinzhu ka reply:"
         response = model.generate_content(prompt)
         return response.text
     except:
-        return random.choice(["hehe 😄", "arrey wah! 😊", "haan bolo 👀", "sach mein? 😮", "lol 😂", "omg really? 😱"])
+        return random.choice(["hehe 😄", "arrey wah! 😊", "haan bolo 👀", "sach mein? 😮", "lol 😂"])
 
 def get_display_name(user):
-    if user.username:
-        return f"@{user.username}"
     return user.first_name or "Tum"
 
 def get_custom_reply(text: str):
@@ -109,7 +102,6 @@ def get_welcome_keyboard():
         [InlineKeyboardButton("💖 ᴋɪᴅɴᴀᴘ ᴋᴀʀʟᴏ 💫", url=b.get("KIDNAP","#"))],
     ])
 
-# ─── START ───────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -131,7 +123,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await update.message.reply_text(welcome, parse_mode="Markdown", reply_markup=kb)
 
-# ─── PHOTO MANAGEMENT ────────────────────────────────────
 async def setphoto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -180,7 +171,6 @@ async def resetpic_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data()
         await update.message.reply_text("✅ Saari start photos hata di!")
 
-# ─── CHAT ON/OFF ─────────────────────────────────────────
 async def chaton(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -203,7 +193,6 @@ async def chatoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ─── BROADCAST ───────────────────────────────────────────
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Sirf admin ke liye!")
@@ -222,19 +211,16 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(0.05)
     await msg.reply_text(f"✅ Broadcast done!\nSent: {sent} | Failed: {failed}")
 
-# ─── CUSTOM REPLIES ──────────────────────────────────────
 async def setreply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     msg = update.message
-    # Method 1: Reply to a message with /setreply <reply text>
     if msg.reply_to_message and msg.reply_to_message.text and context.args:
         keyword = msg.reply_to_message.text.strip()
         reply_text = " ".join(context.args)
         settings["custom_replies"][keyword] = reply_text
         save_data()
         await msg.reply_text(f"✅ Reply set!\n*Keyword:* `{keyword[:60]}`\n*Reply:* {reply_text}", parse_mode="Markdown")
-    # Method 2: /setreply keyword | reply
     elif context.args and "|" in " ".join(context.args):
         parts = " ".join(context.args).split("|", 1)
         keyword, reply_text = parts[0].strip(), parts[1].strip()
@@ -245,7 +231,7 @@ async def setreply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.reply_text("Keyword aur reply dono likhna padega!")
     else:
-        await msg.reply_text("2 tarike:\n1️⃣ Kisi message ki reply mein: `/setreply jawab`\n2️⃣ Direct: `/setreply keyword | jawab`", parse_mode="Markdown")
+        await msg.reply_text("Usage: `/setreply keyword | jawab`", parse_mode="Markdown")
 
 async def delreply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -272,13 +258,12 @@ async def listreplies(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"🔑 `{kw[:40]}` → {rep[:50]}\n"
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# ─── VOICE MANAGEMENT ────────────────────────────────────
 async def uploadvoice_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     msg = update.message
     if not msg.reply_to_message:
-        await msg.reply_text("❌ Kisi voice/audio message ki reply mein /uploadVoice <keyword> likho!")
+        await msg.reply_text("❌ Kisi voice/audio ki reply mein /uploadVoice <keyword> likho!")
         return
     reply = msg.reply_to_message
     file_id = None
@@ -309,7 +294,7 @@ async def revoice_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if vid in settings.get("voice_messages", {}):
         del settings["voice_messages"][vid]
         save_data()
-        await update.message.reply_text(f"✅ Voice ID `{vid}` delete ho gaya!", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Voice ID `{vid}` delete!", parse_mode="Markdown")
     else:
         await update.message.reply_text(f"❌ Voice ID `{vid}` nahi mila.", parse_mode="Markdown")
 
@@ -318,14 +303,13 @@ async def voicelist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     voices = settings.get("voice_messages", {})
     if not voices:
-        await update.message.reply_text("Koi voice upload nahi hai abhi.")
+        await update.message.reply_text("Koi voice upload nahi hai.")
         return
     text = "🎙️ *Uploaded Voices:*\n\n"
     for vid, vdata in sorted(voices.items(), key=lambda x: int(x[0])):
         text += f"🆔 ID: `{vid}` | Keyword: `{vdata.get('keyword','N/A')}`\n"
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# ─── STATUS ──────────────────────────────────────────────
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -347,9 +331,9 @@ async def setstatus_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         settings["status_caption"] = " ".join(context.args)
         save_data()
-        await update.message.reply_text("✅ Status caption set!\nTip: `{users}` aur `{groups}` use karo count ke liye.", parse_mode="Markdown")
+        await update.message.reply_text("✅ Status caption set!\nTip: `{users}` aur `{groups}` use karo.", parse_mode="Markdown")
     else:
-        await update.message.reply_text("Usage: /setstatus caption\nExample: /setstatus 🗿Users: {users} | 🌐Groups: {groups}")
+        await update.message.reply_text("Usage: /setstatus caption text\nExample: /setstatus 🗿Users: {users} | Groups: {groups}")
 
 async def userlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -367,7 +351,6 @@ async def grouplist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     f.name = "grouplist.txt"
     await update.message.reply_document(document=f, caption=f"🌐 Total Groups: {len(groups)}")
 
-# ─── PHOTO COMMAND ───────────────────────────────────────
 async def photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not context.args:
@@ -440,7 +423,6 @@ async def dcap_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("Usage: /dcap <id>")
 
-# ─── VC COMMANDS ─────────────────────────────────────────
 async def joinvc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -450,7 +432,7 @@ async def joinvc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     except:
         return
-    await update.message.reply_text("🎙️ VC join kar rahi hoon! Full VC ke liye PyTgCalls setup chahiye.")
+    await update.message.reply_text("🎙️ VC join kar rahi hoon!")
 
 async def leavevc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -468,7 +450,6 @@ async def setvc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("⚙️ VC mein uploaded voices play hongi. /vlist se dekho.")
 
-# ─── FUN COMMANDS ────────────────────────────────────────
 async def gfbf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type not in ["group", "supergroup"]:
@@ -532,7 +513,6 @@ async def couple_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     s = random.sample(members, 2)
     await update.message.reply_text(f"💞 RANDOM COUPLE 💞\n\n❤️ {s[0]} & {s[1]}\n\nKitne cute lagte hain! 😍🎊")
 
-# ─── START CAPTION / BUTTON ──────────────────────────────
 async def setcaption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -549,7 +529,6 @@ async def setbutton(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data()
         await update.message.reply_text(f"✅ Button updated: {context.args[0]}")
 
-# ─── MESSAGE HANDLERS ────────────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
@@ -558,30 +537,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not user:
         return
-
     if chat.type in ["group", "supergroup"]:
         groups.add(chat.id)
         mention = f"[{user.first_name}](tg://user?id={user.id})"
         recent_group_users[chat.id].add(mention)
-        if msg.reply_to_message and msg.reply_to_message.from_user:
-            reply_counts[chat.id][user.id][msg.reply_to_message.from_user.id] += 1
-
     if chat.type == "private":
         users_started.add(user.id)
-
     if not chat_enabled.get(chat.id, True):
         return
-
     if not msg.text:
         return
-
-    # Custom reply check
     custom = get_custom_reply(msg.text)
     if custom:
         await msg.reply_text(custom)
         return
-
-    # Voice reply check (98.8% chance)
     voice_fid = get_voice_for_text(msg.text)
     if voice_fid and random.random() < 0.988:
         try:
@@ -589,8 +558,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         except:
             pass
-
-    # AI reply
     display = get_display_name(user)
     response = await get_ai_response(msg.text, display)
     await msg.reply_text(response)
@@ -615,13 +582,12 @@ async def handle_voice_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = await get_ai_response("(koi voice message bheja)", display)
         await update.message.reply_text(response)
 
-# ─── HANDLERS SETUP ──────────────────────────────────────
 def add_handlers(app):
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler(["CHATON", "chaton"], chaton))
     app.add_handler(CommandHandler(["CHATOFF", "chatoff"], chatoff))
     app.add_handler(CommandHandler(["broadcast", "bcast"], broadcast))
-    app.add_handler(CommandHandler(["GfBF", "gfbf", "GFBF"], gfbf_cmd))
+    app.add_handler(CommandHandler(["GFBF", "gfbf", "GfBF"], gfbf_cmd))
     app.add_handler(CommandHandler(["CGFBF", "cgfbf"], cgfbf_cmd))
     app.add_handler(CommandHandler(["BFF", "bff"], bff_cmd))
     app.add_handler(CommandHandler(["COUPLE", "couple"], couple_cmd))
@@ -630,23 +596,23 @@ def add_handlers(app):
     app.add_handler(CommandHandler(["setreply", "Setreply"], setreply))
     app.add_handler(CommandHandler(["delreply", "Delreply"], delreply))
     app.add_handler(CommandHandler(["listreplies", "Listreplies"], listreplies))
-    app.add_handler(CommandHandler(["setphoto", "addphoto", "Setphoto", "Addphoto"], setphoto_cmd))
-    app.add_handler(CommandHandler(["photolist", "Photolist"], photolist_cmd))
-    app.add_handler(CommandHandler(["resetpic", "Resetpic"], resetpic_cmd))
-    app.add_handler(CommandHandler(["uploadVoice", "uploadvoice", "UploadVoice"], uploadvoice_cmd))
+    app.add_handler(CommandHandler(["setphoto", "addphoto"], setphoto_cmd))
+    app.add_handler(CommandHandler("photolist", photolist_cmd))
+    app.add_handler(CommandHandler("resetpic", resetpic_cmd))
+    app.add_handler(CommandHandler(["uploadVoice", "uploadvoice"], uploadvoice_cmd))
     app.add_handler(CommandHandler(["revoice", "Revoice"], revoice_cmd))
-    app.add_handler(CommandHandler(["vlist", "voicelist", "Vlist", "Voicelist"], voicelist_cmd))
-    app.add_handler(CommandHandler(["status", "Status"], status_cmd))
-    app.add_handler(CommandHandler(["setstatus", "Setstatus"], setstatus_cmd))
-    app.add_handler(CommandHandler(["userlist", "Userlist"], userlist_cmd))
-    app.add_handler(CommandHandler(["grouplist", "Grouplist"], grouplist_cmd))
+    app.add_handler(CommandHandler(["vlist", "voicelist"], voicelist_cmd))
+    app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CommandHandler("setstatus", setstatus_cmd))
+    app.add_handler(CommandHandler("userlist", userlist_cmd))
+    app.add_handler(CommandHandler("grouplist", grouplist_cmd))
     app.add_handler(CommandHandler(["photo", "Photo"], photo_cmd))
-    app.add_handler(CommandHandler(["upcaption", "Upcaption"], upcaption_cmd))
-    app.add_handler(CommandHandler(["caplist", "Caplist"], caplist_cmd))
-    app.add_handler(CommandHandler(["dcap", "Dcap"], dcap_cmd))
-    app.add_handler(CommandHandler(["joinvc", "jvc", "Joinvc", "Jvc"], joinvc_cmd))
-    app.add_handler(CommandHandler(["leavevc", "lvc", "Leavevc", "Lvc"], leavevc_cmd))
-    app.add_handler(CommandHandler(["setvc", "Setvc"], setvc_cmd))
+    app.add_handler(CommandHandler("upcaption", upcaption_cmd))
+    app.add_handler(CommandHandler("caplist", caplist_cmd))
+    app.add_handler(CommandHandler("dcap", dcap_cmd))
+    app.add_handler(CommandHandler(["joinvc", "jvc"], joinvc_cmd))
+    app.add_handler(CommandHandler(["leavevc", "lvc"], leavevc_cmd))
+    app.add_handler(CommandHandler("setvc", setvc_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice_msg))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
