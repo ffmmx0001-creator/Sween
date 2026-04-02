@@ -343,43 +343,61 @@ async def userlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     f.name = "userlist.txt"
     await update.message.reply_document(document=f, caption=f"👥 Total Users: {len(users_started)}")
 
-async def grouplist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    text = f"Total Groups: {len(groups)}\n\n" + "\n".join(str(g) for g in groups)
-    f = io.BytesIO(text.encode())
-    f.name = "grouplist.txt"
-    await update.message.reply_document(document=f, caption=f"🌐 Total Groups: {len(groups)}")
-
 async def photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not context.args:
         await msg.reply_text("Usage: /photo @username")
         return
+
     username = context.args[0].lstrip("@")
+
+    # Step 1: Pehla message -- fixed photo + caption
     sent = await msg.reply_photo(
         photo="https://files.catbox.moe/k5j9ya.jpg",
         caption="*😉HYE SMLIE PLEASE!! 📷📸!!*",
         parse_mode="Markdown"
     )
+
+    # Step 2: 3 second baad caption badlo
     await asyncio.sleep(3)
     try:
-        await sent.edit_caption(caption="*😋Wait a Second For Image*", parse_mode="Markdown")
-    except:
+        await sent.edit_caption(
+            caption="*😋Wait a Second For Image*",
+            parse_mode="Markdown"
+        )
+    except Exception:
         pass
-    await asyncio.sleep(1)
+
+    # Step 3: 2 second aur wait, phir user ki profile photo
+    await asyncio.sleep(2)
+
+    # Random caption select karo uploaded captions mein se
     captions = settings.get("photo_captions", [])
-    cap_text = random.choice(captions)["text"] if captions else "*😉You Are Looking Cool In Image*"
+    if captions:
+        cap_text = random.choice(captions)["text"]
+    else:
+        cap_text = "*😉You Are Looking Cool In Image*"
+
+    # User ki profile photo fetch karo
     try:
         chat_obj = await context.bot.get_chat(f"@{username}")
-        photos = await context.bot.get_user_profile_photos(chat_obj.id, limit=1)
+        user_id = chat_obj.id
+        photos = await context.bot.get_user_profile_photos(user_id, limit=1)
         if photos and photos.photos:
-            await msg.reply_photo(photo=photos.photos[0][-1].file_id, caption=cap_text, parse_mode="Markdown")
+            await msg.reply_photo(
+                photo=photos.photos[0][-1].file_id,
+                caption=cap_text,
+                parse_mode="Markdown"
+            )
         else:
-            await msg.reply_text(f"{cap_text}\n@{username}", parse_mode="Markdown")
-    except:
-        await msg.reply_text(f"{cap_text}\n@{username}", parse_mode="Markdown")
-
+            # Profile photo nahi hai
+            await msg.reply_text(
+                f"@{username} ki koi profile photo nahi hai!\n\n{cap_text}",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.warning(f"Photo cmd error: {e}")
+        await msg.reply_text(cap_text, parse_mode="Markdown")
 async def upcaption_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
