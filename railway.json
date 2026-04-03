@@ -1,5 +1,13 @@
 {
   "build": {
-    "builder": "NIXPACKS"
+    "builder": "NIXPACKS",
+    "nixpacksPlan": {
+      "providers": ["python"],
+      "phases": {
+        "setup": {
+          "nixPkgs": ["python310", "ffmpeg-headless", "gcc", "nodejs_20"]
+        }
+      }
+    }
   }
 }
