@@ -9,9 +9,9 @@ from pytgcalls.types.input_stream.audio_parameters import AudioParameters
 
 logger = logging.getLogger(__name__)
 
-API_ID    = int(os.getenv("API_ID", "0"))
-API_HASH  = os.getenv("API_HASH", "")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+API_ID           = int(os.getenv("API_ID", "0"))
+API_HASH         = os.getenv("API_HASH", "")
+BOT_TOKEN        = os.getenv("BOT_TOKEN", "")
 PYROGRAM_SESSION = os.getenv("PYROGRAM_SESSION", "")
 
 BOT_TRIGGER_NAMES = [
@@ -23,12 +23,21 @@ active_vc_chats:   set  = set()
 vc_listening:      dict = {}
 vc_keyword_voices: dict = {}
 
-pyro_client = Client(
-    "dreamgirl_session",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+if PYROGRAM_SESSION:
+    pyro_client = Client(
+        "dreamgirl_session",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        session_string=PYROGRAM_SESSION
+    )
+else:
+    pyro_client = Client(
+        "dreamgirl_session",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        bot_token=BOT_TOKEN
+    )
+
 calls = PyTgCalls(pyro_client)
 
 INTENT_MAP = {
@@ -128,7 +137,7 @@ def make_tts_ogg(text: str) -> bytes:
     except Exception as e:
         logger.error(f"[TTS OGG] {e}")
         return b""
-        
+
 # ── STT ──────────────────────────────────────────────────
 
 def stt_from_bytes(audio_bytes: bytes) -> str:
@@ -171,19 +180,18 @@ async def join_vc(chat_id: int, bot_app=None, ai_func=None) -> bool:
     try:
         if chat_id in active_vc_chats:
             return False
-wav = make_tts_wav(
+        wav = make_tts_wav(
             "Hiii everyone! Main aa gayi Dream Girl! "
             "Agar mujhse baat karni ho toh mera naam lo!"
         )
-        if not wav:
-            logger.error("[VC] TTS failed -- wav file nahi bani, phir bhi join karne ki koshish")
-        if not wav:
+        try:
+            if wav:
+                await calls.join_group_call(chat_id, AudioPiped(wav))
+            else:
+                await calls.join_group_call(chat_id, AudioPiped("/dev/zero"))
+        except Exception as join_err:
+            logger.error(f"[VC] join_group_call error: {join_err}")
             return False
-        await calls.join_group_call(
-            chat_id,
-            AudioPiped(wav),
-            stream_type=StreamType().local_stream
-        )
         active_vc_chats.add(chat_id)
         task = asyncio.create_task(_listen_loop(chat_id, bot_app, ai_func))
         vc_listening[chat_id] = task
@@ -220,10 +228,7 @@ async def speak_in_vc(chat_id: int, text: str) -> bool:
         wav = make_tts_wav(text)
         if not wav:
             return False
-        await calls.change_stream(
-            chat_id,
-            AudioPiped(wav)
-        )
+        await calls.change_stream(chat_id, AudioPiped(wav))
         return True
     except Exception as e:
         logger.error(f"[VC] Speak error: {e}")
