@@ -506,13 +506,12 @@ async def handle_text_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type == "private":
         display  = user.first_name or "Pyaare"
         response = await get_ai_response(msg.text, display, user.id)
-        ogg      = make_tts_ogg(response)
-        if ogg:
-            ogg_io = io.BytesIO(ogg); ogg_io.name = "r.ogg"
-            await msg.reply_voice(voice=ogg_io, caption=f"🌸 _{response}_", parse_mode="Markdown")
-        else:
-            await msg.reply_text(f"🌸 {response}")
-
+        if chat.type in ("private", "group", "supergroup"):
+        display  = user.first_name or "Pyaare"
+        response = await get_ai_response(msg.text, display, user.id)
+        if int(cid) in active_vc_chats:
+            await speak_in_vc(int(cid), response)
+        await msg.reply_text(f"🌸 {response}")
 async def handle_voice_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
