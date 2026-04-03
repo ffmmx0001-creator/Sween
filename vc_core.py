@@ -5,7 +5,7 @@ from pydub import AudioSegment
 from pyrogram import Client
 from pytgcalls import PyTgCalls
 from pytgcalls.types.input_stream import AudioPiped
-from pytgcalls.types import JoinVoiceCall, LeaveVoiceCall
+from pytgcalls.types.input_stream.audio_parameters import AudioParameters
 
 logger = logging.getLogger(__name__)
 
