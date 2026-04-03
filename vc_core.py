@@ -81,11 +81,21 @@ def make_tts_wav(text: str, out_path: str = None) -> str:
     if not out_path:
         out_path = tempfile.mktemp(suffix=".wav")
     try:
-        tts = gTTS(text=text, lang=TTS_LANG, slow=False)
-        mp3_io = io.BytesIO()
-        tts.write_to_fp(mp3_io)
-        mp3_io.seek(0)
-        audio = AudioSegment.from_mp3(mp3_io)
+        import edge_tts
+        mp3_path = tempfile.mktemp(suffix=".mp3")
+        async def _gen():
+            communicate = edge_tts.Communicate(
+                text,
+                voice="hi-IN-SwaraNeural",
+                rate="+8%",
+                pitch="+15Hz",
+                volume="+0%"
+            )
+            await communicate.save(mp3_path)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(_gen())
+        loop.close()
+        audio = AudioSegment.from_mp3(mp3_path)
         audio = audio.set_channels(1).set_frame_rate(48000)
         audio.export(out_path, format="wav")
         return out_path
@@ -95,11 +105,21 @@ def make_tts_wav(text: str, out_path: str = None) -> str:
 
 def make_tts_ogg(text: str) -> bytes:
     try:
-        tts = gTTS(text=text, lang=TTS_LANG, slow=False)
-        mp3_io = io.BytesIO()
-        tts.write_to_fp(mp3_io)
-        mp3_io.seek(0)
-        audio = AudioSegment.from_mp3(mp3_io)
+        import edge_tts
+        mp3_path = tempfile.mktemp(suffix=".mp3")
+        async def _gen():
+            communicate = edge_tts.Communicate(
+                text,
+                voice="hi-IN-SwaraNeural",
+                rate="+8%",
+                pitch="+15Hz",
+                volume="+0%"
+            )
+            await communicate.save(mp3_path)
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(_gen())
+        loop.close()
+        audio = AudioSegment.from_mp3(mp3_path)
         ogg_io = io.BytesIO()
         audio.export(ogg_io, format="ogg", codec="libopus", bitrate="64k")
         ogg_io.seek(0)
@@ -107,7 +127,7 @@ def make_tts_ogg(text: str) -> bytes:
     except Exception as e:
         logger.error(f"[TTS OGG] {e}")
         return b""
-
+        
 # ── STT ──────────────────────────────────────────────────
 
 def stt_from_bytes(audio_bytes: bytes) -> str:
