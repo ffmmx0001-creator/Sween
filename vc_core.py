@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 API_ID    = int(os.getenv("API_ID", "0"))
 API_HASH  = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+PYROGRAM_SESSION = os.getenv("PYROGRAM_SESSION", "")
 
 BOT_TRIGGER_NAMES = [
     "dream girl", "deam girl", "dreamgirl", "deamgirl", "dream", "dg", "ड्रीम गर्ल"
