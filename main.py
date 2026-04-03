@@ -579,3 +579,6 @@ async def main():
         await app.stop()
         await app.shutdown()
         await stop_vc_system()
+
+if __name__ == "__main__":
+    asyncio.run(main())
