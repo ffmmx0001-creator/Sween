@@ -570,9 +570,12 @@ async def main():
 
     logger.info("Bot starting...")
     try:
-        await app.run_polling(drop_pending_updates=True)
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(drop_pending_updates=True)
+        await asyncio.Event().wait()
     finally:
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
         await stop_vc_system()
-
-if __name__ == "__main__":
-    asyncio.run(main())
