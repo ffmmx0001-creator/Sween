@@ -171,10 +171,12 @@ async def join_vc(chat_id: int, bot_app=None, ai_func=None) -> bool:
     try:
         if chat_id in active_vc_chats:
             return False
-        wav = make_tts_wav(
+wav = make_tts_wav(
             "Hiii everyone! Main aa gayi Dream Girl! "
             "Agar mujhse baat karni ho toh mera naam lo!"
         )
+        if not wav:
+            logger.error("[VC] TTS failed -- wav file nahi bani, phir bhi join karne ki koshish")
         if not wav:
             return False
         await calls.join_group_call(
