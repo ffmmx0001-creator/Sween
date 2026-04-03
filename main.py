@@ -503,16 +503,13 @@ async def handle_text_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if kw.lower() in msg.text.lower():
             await msg.reply_text(reply)
             return
-    if chat.type == "private":
-        display  = user.first_name or "Pyaare"
-        response = await get_ai_response(msg.text, display, user.id)
-        if chat.type in ("private", "group", "supergroup"):
+    if chat.type in ("private", "group", "supergroup"):
         display  = user.first_name or "Pyaare"
         response = await get_ai_response(msg.text, display, user.id)
         if int(cid) in active_vc_chats:
             await speak_in_vc(int(cid), response)
         await msg.reply_text(f"🌸 {response}")
-        
+
 async def handle_voice_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
