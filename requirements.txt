@@ -4,6 +4,7 @@ tgcrypto
 py-tgcalls==0.9.7
 SpeechRecognition
 pydub
+edge-tts
 gTTS
 google-generativeai
 python-dotenv
