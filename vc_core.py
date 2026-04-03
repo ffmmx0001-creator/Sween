@@ -228,8 +228,10 @@ async def start_vc_system():
 async def stop_vc_system():
     for cid in list(active_vc_chats):
         await leave_vc(cid)
-    await calls.stop()
-    await pyro_client.stop()
+    try:
+        await pyro_client.stop()
+    except Exception:
+        pass
 
 def sync_voices(voice_messages: dict):
     global vc_keyword_voices
