@@ -1,7 +1,7 @@
 python-telegram-bot==20.7
 pyrogram==2.0.106
 tgcrypto
-py-tgcalls==0.9.0
+py-tgcalls==0.9.7
 SpeechRecognition
 pydub
 gTTS
