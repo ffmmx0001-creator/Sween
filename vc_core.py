@@ -6,7 +6,7 @@ from pydub import AudioSegment
 logger = logging.getLogger(__name__)
 
 API_ID           = int(os.getenv("API_ID", "0"))
-API_HASH         = os.getenv("API_HASH", ""))
+API_HASH         = os.getenv("API_HASH", "")
 BOT_TOKEN        = os.getenv("BOT_TOKEN", "")
 PYROGRAM_SESSION = os.getenv("PYROGRAM_SESSION", "")
 
@@ -19,7 +19,7 @@ _assistant_session: str = ""
 def add_assistant(session_string: str):
     global _assistant_session
     _assistant_session = session_string
-    logger.info("[VC] Assistant session saved (VC join needs pytgcalls)")
+    logger.info("[VC] Assistant session saved")
 
 
 def remove_assistant():
@@ -46,8 +46,10 @@ def make_tts_wav(text: str, out_path: str = None) -> str:
         audio = AudioSegment.from_mp3(mp3_path)
         audio = audio.set_channels(1).set_frame_rate(48000)
         audio.export(out_path, format="wav")
-        try: os.remove(mp3_path)
-        except: pass
+        try:
+            os.remove(mp3_path)
+        except:
+            pass
         return out_path
     except Exception as e:
         logger.error(f"[TTS WAV] {e}")
@@ -71,8 +73,10 @@ def make_tts_ogg(text: str) -> bytes:
         buf = io.BytesIO()
         audio.export(buf, format="ogg", codec="libopus", bitrate="64k")
         buf.seek(0)
-        try: os.remove(mp3_path)
-        except: pass
+        try:
+            os.remove(mp3_path)
+        except:
+            pass
         return buf.read()
     except Exception as e:
         logger.error(f"[TTS OGG] {e}")
@@ -99,7 +103,7 @@ def stt_from_bytes(audio_bytes: bytes) -> str:
 
 
 async def join_vc(chat_id: int, bot_app=None, ai_func=None) -> bool:
-    logger.warning("[VC] pytgcalls not installed -- VC join disabled")
+    logger.warning("[VC] pytgcalls not installed -- VC disabled")
     return False
 
 
@@ -113,7 +117,7 @@ async def speak_in_vc(chat_id: int, text: str) -> bool:
 
 
 async def start_vc_system():
-    logger.info("[VC] VC system skipped (pytgcalls not available)")
+    logger.info("[VC] VC system skipped")
 
 
 async def stop_vc_system():
