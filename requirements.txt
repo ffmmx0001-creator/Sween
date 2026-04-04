@@ -3,5 +3,6 @@ pyrogram==2.0.106
 py-tgcalls==2.2.11
 edge-tts
 pydub
+SpeechRecognition
 google-generativeai
 ffmpeg-python
