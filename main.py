@@ -160,6 +160,7 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("VC join kar rahi hoon...")
 
+    # Pehle assistant start karo
     if _calls_client is None:
         ok = await _start_assistant()
         if not ok:
@@ -171,6 +172,16 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     try:
+        # Step 1: Assistant ko group mein invite karo
+        try:
+            await _pyro_client.add_chat_members(chat_id, (await _pyro_client.get_me()).id)
+        except Exception:
+            pass  # Already member hai toh ignore karo
+
+        # Step 2: Thoda wait karo
+        await asyncio.sleep(2)
+
+        # Step 3: VC join karo
         from pytgcalls.types import MediaStream
         greeting = "Hiii everyone! Main aa gayi Dream Girl! Mera naam lo toh main jawab dungi!"
         wav = await make_tts_wav(greeting)
@@ -187,6 +198,7 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task = asyncio.create_task(listen_loop(chat_id))
         listening_tasks[chat_id] = task
         await update.message.reply_text("Dream Girl VC mein aa gayi! Mera naam lo!")
+
         try:
             if wav: os.remove(wav)
         except: pass
@@ -197,10 +209,9 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"VC join nahi hua.\n\nError: {e}\n\n"
             "Check karo:\n"
             "- Group mein Voice Chat active hai?\n"
-            "- Bot ko admin banaya?\n"
-            "- Assistant account group mein add hai?"
+            "- Assistant account ko group mein add karne ki permission hai?\n"
+            "- PYROGRAM_SESSION sahi hai?"
         )
-
 
 # ── /leavevc ──────────────────────────────────────────────
 async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
