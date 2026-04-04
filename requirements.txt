@@ -4,5 +4,5 @@ py-tgcalls==2.2.11
 edge-tts
 pydub
 SpeechRecognition
-google-generativeai
+google-genai
 ffmpeg-python
