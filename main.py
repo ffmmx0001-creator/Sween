@@ -1,7 +1,7 @@
 import os, asyncio, logging, tempfile, io
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import google.generativeai as genai
+from google import genai
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,8 +13,6 @@ API_ID           = int(os.getenv("API_ID", "0"))
 API_HASH         = os.getenv("API_HASH", "")
 PYROGRAM_SESSION = os.getenv("PYROGRAM_SESSION", "")
 
-from google import genai
-...
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 
 _pyro_client  = None
@@ -31,7 +29,10 @@ async def get_ai_response(text: str) -> str:
             "Hinglish mein baat karo. Short warm natural jawab do. "
             f"User ne kaha: {text}"
         )
-        resp = gemini.generate_content(prompt)
+        resp = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
         return resp.text.strip()
     except Exception as e:
         logger.error(f"[AI] {e}")
@@ -98,7 +99,6 @@ async def speak_in_vc(chat_id: int, text: str):
 
 # ── VC sunna -- loop ─────────────────────────────────────
 async def listen_loop(chat_id: int):
-    """VC mein sunta rahega -- 'dream girl' naam sune toh jawab dega"""
     logger.info(f"[LISTEN] Starting listen loop for {chat_id}")
     while chat_id in active_chats:
         try:
@@ -114,7 +114,7 @@ async def listen_loop(chat_id: int):
 async def _start_assistant() -> bool:
     global _pyro_client, _calls_client
     if not PYROGRAM_SESSION:
-        logger.error("[VC] PYROGRAM_SESSION set nahi hai Railway Variables mein!")
+        logger.error("[VC] PYROGRAM_SESSION set nahi hai!")
         return False
     if API_ID == 0:
         logger.error("[VC] API_ID set nahi hai!")
@@ -178,7 +178,6 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if wav and os.path.exists(wav):
             await _calls_client.join_group_call(chat_id, MediaStream(wav))
         else:
-            # Silent join
             silent = tempfile.mktemp(suffix=".wav")
             from pydub import AudioSegment
             AudioSegment.silent(duration=1000).export(silent, format="wav")
@@ -229,7 +228,6 @@ async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Voice message handler ─────────────────────────────────
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Voice message aaye toh sunke jawab do"""
     user = update.effective_user
     chat_id = update.effective_chat.id
     msg = update.message
@@ -243,7 +241,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "kuch kaha"
         logger.info(f"[STT] Heard: {text}")
         name = user.first_name if user else "Pyaare"
-        # Sirf tab jawab do jab "dream girl" naam liya ho ya private chat ho
         if "dream girl" in text.lower() or "dreamgirl" in text.lower() or update.effective_chat.type == "private":
             response = await get_ai_response(f"{name} ne kaha: {text}")
             if chat_id in active_chats:
@@ -255,14 +252,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Text message handler ──────────────────────────────────
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Text mein naam leke puche toh jawab do"""
     user = update.effective_user
     chat_id = update.effective_chat.id
     msg = update.message
     if not msg or not msg.text:
         return
     text_lower = msg.text.lower()
-    # Group mein sirf tab respond karo jab naam liya ho
     if update.effective_chat.type != "private":
         if "dream girl" not in text_lower and "dreamgirl" not in text_lower:
             return
@@ -303,3 +298,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+requirements.txt:
