@@ -1,22 +1,19 @@
-# main.py — DREAM GIRL BOT COMPLETE
-import os, io, json, uuid, asyncio, logging, random
-from datetime import datetime
-from dotenv import load_dotenv
-
-load_dotenv()
-
-import google.generativeai as genai
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+# main.py -- Dream Girl Bot
+import os, asyncio, logging, json, io
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+)
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler,
-    MessageHandler, filters, ContextTypes
+    Application, CommandHandler, MessageHandler,
+    filters, ContextTypes, ConversationHandler,
+    CallbackQueryHandler
 )
 from vc_core import (
-    join_vc, leave_vc, speak_in_vc,
-    start_vc_system, stop_vc_system,
-    sync_voices, make_tts_ogg, active_vc_chats,
+    join_vc, leave_vc, start_vc_system, stop_vc_system,
+    make_tts_ogg, active_vc_chats, speak_in_vc,
+    add_assistant, remove_assistant, stt_from_bytes
 )
-from voice_chat import handle_voice_message
+import google.generativeai as genai
 
 logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(message)s",
@@ -24,548 +21,539 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── ENV ───────────────────────────────────────────────────
-BOT_TOKEN      = os.getenv("BOT_TOKEN", "")
-ADMIN_ID       = int(os.getenv("ADMIN_ID", "0"))
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+BOT_TOKEN  = os.getenv("BOT_TOKEN", "")
+ADMIN_ID   = int(os.getenv("ADMIN_ID", "0"))
+GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+BOT_NAME   = os.getenv("BOT_USERNAME", "IamYourGirlBot")
 
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-DATA_FILE    = "data.json"
+genai.configure(api_key=GEMINI_KEY)
+gemini = genai.GenerativeModel("gemini-1.5-flash")
 
-# ── DATA ──────────────────────────────────────────────────
-settings = {
-    "start_photos":    [],
-    "start_caption":   "🌸 *Dream Girl Bot mein aapka swagat hai!*\nMera naam lo aur kuch bhi pucho~",
-    "start_buttons":   [],
-    "auto_replies":    {},
-    "voice_messages":  {},
-    "coupons":        {},
-    "top_banners":    {},
-    "status_caption": "Bot is running smoothly!",
-}
-chat_enabled   = {}
-daily_claimed  = {}
-weekly_claimed = {}
-user_data      = {}
-group_data     = {}
+DATA_FILE = "data.json"
+
 
 def load_data():
-    global settings, chat_enabled, daily_claimed, weekly_claimed, user_data, group_data
     try:
         with open(DATA_FILE, "r") as f:
-            d = json.load(f)
-            settings.update(d.get("settings", {}))
-            chat_enabled   = d.get("chat_enabled", {})
-            daily_claimed  = d.get("daily_claimed", {})
-            weekly_claimed = d.get("weekly_claimed", {})
-            user_data      = d.get("user_data", {})
-            group_data     = d.get("group_data", {})
+            return json.load(f)
     except:
-        pass
-    sync_voices(settings.get("voice_messages", {}))
+        return {
+            "welcome_photo": "",
+            "welcome_caption": "Hiii! Main hoon Dream Girl 🌸",
+            "welcome_buttons": [],
+            "welcome_photos": [],
+            "leaderboard_photo": "",
+            "chat_disabled": [],
+            "group_msg_count": {},
+            "users": []
+        }
 
-def save_data():
+
+def save_data(d):
     with open(DATA_FILE, "w") as f:
-        json.dump({
-            "settings": settings,
-            "chat_enabled": chat_enabled,
-            "daily_claimed": daily_claimed,
-            "weekly_claimed": weekly_claimed,
-            "user_data": user_data,
-            "group_data": group_data,
-        }, f, ensure_ascii=False, indent=2)
+        json.dump(d, f, indent=2, ensure_ascii=False)
 
-# ── HELPERS ───────────────────────────────────────────────
-async def is_admin_or_owner(update: Update) -> bool:
-    user = update.effective_user
-    if user.id == ADMIN_ID:
-        return True
-    chat = update.effective_chat
-    if chat.type in ("group", "supergroup"):
-        member = await chat.get_member(user.id)
-        return member.status in ("administrator", "creator")
-    return False
 
-async def get_ai_response(text: str, name: str, user_id: int) -> str:
+data = load_data()
+
+AWAIT_BUTTON_NAME, AWAIT_BUTTON_URL, AWAIT_DPHOTO_INDEX = range(3)
+
+
+def is_admin(uid: int) -> bool:
+    return uid == ADMIN_ID
+
+
+async def get_ai_response(text: str, name: str, uid: int) -> str:
     try:
         prompt = (
-            f"Tum Dream Girl ho ek cute friendly Hinglish AI bot. "
-            f"User ka naam {name} hai. "
-            f"Short cute warm reply do 1 ya 2 sentences mein. "
-            f"User ne kaha: {text}"
+            f"Tum ho Dream Girl — ek cute, pyaari, real ladki ki tarah baat "
+            f"karne wali AI girlfriend. Sirf Hinglish mein baat karo "
+            f"(Hindi + thodi English). Har jawab short, warm aur natural hona "
+            f"chahiye jaise ek close girlfriend baat karti hai. Kabhi robot "
+            f"jaisi baat mat karo. User ka naam hai {name}. "
+            f"Unka message: {text}"
         )
-        resp = await asyncio.to_thread(gemini_model.generate_content, prompt)
+        resp = gemini.generate_content(prompt)
         return resp.text.strip()
     except Exception as e:
         logger.error(f"[AI] {e}")
-        return "Mujhe samajh nahi aaya~ Dobara try karo!"
+        return "Hiii~ Kuch toh hua, thoda baad mein baat karte hain na? 🌸"
 
-def get_user_record(user_id: int) -> dict:
-    uid = str(user_id)
-    if uid not in user_data:
-        user_data[uid] = {"coins": 0, "cats": {}, "family": "", "joined": str(datetime.now())}
-    return user_data[uid]
 
-# ══════════════════════════════════════════════════════════
-#   COMMANDS
-# ══════════════════════════════════════════════════════════
+def track_group(cid: str, title: str):
+    data.setdefault("group_msg_count", {})
+    if cid not in data["group_msg_count"]:
+        data["group_msg_count"][cid] = {"count": 0, "title": title}
+    data["group_msg_count"][cid]["count"] += 1
+    data["group_msg_count"][cid]["title"] = title
+    save_data(data)
 
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user    = update.effective_user
-    get_user_record(user.id)
-    caption = settings.get("start_caption", "🌸 Welcome!")
-    buttons = settings.get("start_buttons", [])
-    keyboard = [[InlineKeyboardButton(b["name"], url=b["url"])] for b in buttons]
-    markup   = InlineKeyboardMarkup(keyboard) if keyboard else None
-    photos   = settings.get("start_photos", [])
+
+# ── /start ────────────────────────────────────────────────
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user:
+        uid = str(user.id)
+        if uid not in data.get("users", []):
+            data.setdefault("users", []).append(uid)
+            save_data(data)
+
+    caption = data.get("welcome_caption", "Hiii! Main hoon Dream Girl 🌸")
+    buttons = data.get("welcome_buttons", [])
+    photos  = data.get("welcome_photos", [])
+    if not photos and data.get("welcome_photo"):
+        photos = [data["welcome_photo"]]
+
+    kb = []
+    row = []
+    for i, btn in enumerate(buttons):
+        row.append(InlineKeyboardButton(btn["name"], url=btn["url"]))
+        if len(row) == 2 or i == len(buttons) - 1:
+            kb.append(row)
+            row = []
+    markup = InlineKeyboardMarkup(kb) if kb else None
+
     if photos:
-        await update.message.reply_photo(
-            photo=random.choice(photos)["file_id"],
-            caption=caption, parse_mode="Markdown", reply_markup=markup
-        )
-    else:
-        await update.message.reply_text(caption, parse_mode="Markdown", reply_markup=markup)
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user     = update.effective_user
-    is_admin = user.id == ADMIN_ID
-    user_text = (
-        "╔══════════════════════╗\n"
-        "     🌸 *DREAM GIRL BOT*\n"
-        "╚══════════════════════╝\n\n"
-        "🆕 *Commands:*\n"
-        "┣ `/start` — Bot start karo\n"
-        "┣ `/profile` — Apni profile\n"
-        "┣ `/daily` — Daily 💰 100-200 coins\n"
-        "┣ `/weekly` — Weekly 💰 500-1000 coins\n"
-        "┣ `/coupon <code>` — Coupon se coins\n"
-        "┣ `/top` — Leaderboard\n"
-        "┣ `/gfbf` — Aaj ke BF GF\n"
-        "┣ `/bff` — Aaj ke BFF\n"
-        "┣ `/chaton` — Chat ON\n"
-        "┣ `/chatoff` — Chat OFF\n"
-        "┣ `/joinvc` — Dream Girl VC join kare\n"
-        "┗ `/leavevc` — Dream Girl VC leave kare\n"
-    )
-    await update.message.reply_text(user_text, parse_mode="Markdown")
-    if is_admin:
-        admin_text = (
-            "╔══════════════════════╗\n"
-            "      🔑 *ADMIN PANEL*\n"
-            "╚══════════════════════╝\n\n"
-            "┣ `/broadcast` — Sabko message\n"
-            "┣ `/setphoto` — Start photo\n"
-            "┣ `/photolist` — Photos list\n"
-            "┣ `/resetpic <id>` — Photo hatao\n"
-            "┣ `/setcaption <text>` — Caption\n"
-            "┣ `/setbutton NAME url` — Button\n"
-            "┣ `/setreply kw | reply` — Auto reply\n"
-            "┣ `/delreply <kw>` — Reply hatao\n"
-            "┣ `/listreplies` — Replies list\n"
-            "┣ `/uploadVoice <kw>` — Voice upload\n"
-            "┣ `/revoice <id>` — Voice hatao\n"
-            "┣ `/vlist` — Voices list\n"
-            "┣ `/addcoupon CODE coins [uses]` — Coupon\n"
-            "┣ `/delcoupon CODE` — Coupon hatao\n"
-            "┣ `/status` — Bot status\n"
-            "┣ `/userlist` — Users file\n"
-            "┗ `/grouplist` — Groups file\n"
-        )
-        await update.message.reply_text(admin_text, parse_mode="Markdown")
-
-async def joinvc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_or_owner(update):
-        await update.message.reply_text("Sirf admins VC join kara sakte hain.")
-        return
-    chat_id = update.effective_chat.id
-    msg     = await update.message.reply_text("VC join kar rahi hoon...")
-    success = await join_vc(chat_id, bot_app=context.bot, ai_func=get_ai_response)
-    if success:
-        await msg.edit_text("Dream Girl VC mein aa gayi! Mera naam lo aur kuch bhi pucho~")
-    else:
-        await msg.edit_text(
-            "VC join nahi ho saka.\n\n"
-            "Check karo:\n"
-            "• Group mein Voice Chat active hai?\n"
-            "• Bot admin hai?\n"
-            "• API_ID aur API_HASH sahi hain .env mein?"
-        )
-
-async def leavevc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_or_owner(update):
-        await update.message.reply_text("Sirf admins VC leave kara sakte hain.")
-        return
-    success = await leave_vc(update.effective_chat.id)
-    if success:
-        await update.message.reply_text("Dream Girl VC se nikal gayi~ Phir milenge!")
-    else:
-        await update.message.reply_text("Bot VC mein nahi hai.")
-
-async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user  = update.effective_user
-    uid   = str(user.id)
-    today = datetime.now().strftime("%Y-%m-%d")
-    if daily_claimed.get(uid) == today:
-        await update.message.reply_text("Aaj ka daily reward le liya! Kal wapas aana~")
-        return
-    coins = random.randint(100, 200)
-    rec   = get_user_record(user.id)
-    rec["coins"] += coins
-    daily_claimed[uid] = today
-    save_data()
-    await update.message.reply_text(f"Daily reward mila! +{coins} coins\nTotal: {rec['coins']} coins")
-
-async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    uid  = str(user.id)
-    now  = datetime.now()
-    last = weekly_claimed.get(uid)
-    if last:
-        last_dt = datetime.strptime(last, "%Y-%m-%d")
-        if (now - last_dt).days < 7:
-            rem = 7 - (now - last_dt).days
-            await update.message.reply_text(f"Weekly reward ke liye {rem} din aur wait karo!")
+        try:
+            await update.message.reply_photo(
+                photo=photos[0], caption=caption,
+                reply_markup=markup, parse_mode="Markdown"
+            )
             return
-    coins = random.randint(500, 1000)
-    rec   = get_user_record(user.id)
-    rec["coins"] += coins
-    weekly_claimed[uid] = now.strftime("%Y-%m-%d")
-    save_data()
-    await update.message.reply_text(f"Weekly reward mila! +{coins} coins\nTotal: {rec['coins']} coins")
+        except:
+            pass
+    await update.message.reply_text(caption, reply_markup=markup, parse_mode="Markdown")
 
-async def coupon_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /coupon <code>")
-        return
-    code    = context.args[0].upper()
-    coupons = settings.get("coupons", {})
-    uid     = str(update.effective_user.id)
-    if code not in coupons:
-        await update.message.reply_text("Invalid coupon!")
-        return
-    c        = coupons[code]
-    used_by  = c.get("used_by", [])
-    max_uses = c.get("max_uses", 999)
-    if uid in used_by:
-        await update.message.reply_text("Yeh coupon tum pehle use kar chuke ho!")
-        return
-    if len(used_by) >= max_uses:
-        await update.message.reply_text("Coupon expire ho gaya!")
-        return
-    coins = c["coins"]
-    rec   = get_user_record(update.effective_user.id)
-    rec["coins"] += coins
-    used_by.append(uid)
-    c["used_by"] = used_by
-    save_data()
-    await update.message.reply_text(f"Coupon redeemed! +{coins} coins\nTotal: {rec['coins']} coins")
 
-async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    rec  = get_user_record(user.id)
-    text = (
-        f"*{user.first_name} ki Profile*\n\n"
-        f"Coins: `{rec.get('coins', 0)}`\n"
-        f"Cats: `{len(rec.get('cats', {}))}`\n"
-        f"Family: `{rec.get('family', 'N/A')}`\n"
-        f"Joined: `{rec.get('joined', 'N/A')[:10]}`"
+# ── /gfbf ─────────────────────────────────────────────────
+async def cmd_gfbf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("📝 Usage: `/gfbf [GF naam] [BF naam]`", parse_mode="Markdown")
+        return
+    gf, bf = args[0], args[1]
+    await update.message.reply_text(
+        f"💑 *GF / BF Card*\n────────────────────\n"
+        f"💗 GF: *{gf}*\n💙 BF: *{bf}*\n"
+        f"────────────────────\nMade with ❤️ by @{BOT_NAME}",
+        parse_mode="Markdown"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
 
-async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    banner  = settings.get("top_banners", {}).get("top")
-    sorted_ = sorted(user_data.items(), key=lambda x: x[1].get("coins", 0), reverse=True)[:10]
-    medals  = ["1","2","3","4","5","6","7","8","9","10"]
-    text    = "*Top 10 Leaderboard*\n\n"
-    for i, (uid, data) in enumerate(sorted_):
-        text += f"{medals[i]}. `{uid}` — {data.get('coins', 0)} coins\n"
-    if banner:
-        await update.message.reply_photo(photo=banner, caption=text, parse_mode="Markdown")
+
+# ── /bff ──────────────────────────────────────────────────
+async def cmd_bff(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("📝 Usage: `/bff [naam1] [naam2]`", parse_mode="Markdown")
+        return
+    a, b = args[0], args[1]
+    await update.message.reply_text(
+        f"👯 *BFF Card*\n────────────────────\n"
+        f"🌟 BFF 1: *{a}*\n🌟 BFF 2: *{b}*\n"
+        f"────────────────────\nMade with 💛 by @{BOT_NAME}",
+        parse_mode="Markdown"
+    )
+
+
+# ── /couple ───────────────────────────────────────────────
+async def cmd_couple(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("📝 Usage: `/couple [naam1] [naam2]`", parse_mode="Markdown")
+        return
+    a, b = args[0], args[1]
+    await update.message.reply_text(
+        f"💞 *Couple Card*\n────────────────────\n"
+        f"🌹 {a} ❤️ {b}\n"
+        f"────────────────────\nMade with 💕 by @{BOT_NAME}",
+        parse_mode="Markdown"
+    )
+
+
+# ── /setphoto ─────────────────────────────────────────────
+async def cmd_setphoto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    if update.message.photo:
+        fid = update.message.photo[-1].file_id
+        data["welcome_photo"] = fid
+        data["welcome_photos"] = [fid]
+        save_data(data)
+        await update.message.reply_text("✅ Welcome photo set ho gaya!")
     else:
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text("📸 Photo ke saath /setphoto bhejo.")
 
-async def gfbf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Aaj ke BF GF abhi decide nahi hue~ Thodi der mein try karo!")
 
-async def bff_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Aaj ke BFF abhi decide nahi hue~ Thodi der mein try karo!")
-
-async def chaton_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_or_owner(update): return
-    chat_enabled[str(update.effective_chat.id)] = True
-    save_data()
-    await update.message.reply_text("Chat ON!")
-
-async def chatoff_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_or_owner(update): return
-    chat_enabled[str(update.effective_chat.id)] = False
-    save_data()
-    await update.message.reply_text("Chat OFF!")
-
-# ── Admin ─────────────────────────────────────────────────
-
-async def setphoto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
-        await update.message.reply_text("Photo reply mein bhejo!")
+# ── /addphoto ─────────────────────────────────────────────
+async def cmd_addphoto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
         return
-    fid = update.message.reply_to_message.photo[-1].file_id
-    pid = str(uuid.uuid4())[:8]
-    settings["start_photos"].append({"file_id": fid, "id": pid})
-    save_data()
-    await update.message.reply_text(f"Photo added! ID: `{pid}`", parse_mode="Markdown")
+    if update.message.photo:
+        fid = update.message.photo[-1].file_id
+        data.setdefault("welcome_photos", []).append(fid)
+        save_data(data)
+        await update.message.reply_text(f"✅ Photo add ho gayi! Total: {len(data['welcome_photos'])}")
+    else:
+        await update.message.reply_text("📸 Photo ke saath /addphoto bhejo.")
 
-async def photolist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    photos = settings.get("start_photos", [])
+
+# ── /dphoto ───────────────────────────────────────────────
+async def cmd_dphoto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    photos = data.get("welcome_photos", [])
     if not photos:
-        await update.message.reply_text("Koi photo nahi.")
-        return
-    text = "*Photos:*\n" + "\n".join(f"• `{p['id']}`" for p in photos)
-    await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text("Koi photo nahi hai.")
+        return ConversationHandler.END
+    lines = "\n".join([f"{i+1}. Photo {i+1}" for i in range(len(photos))])
+    await update.message.reply_text(f"Kaunsi photo delete karni hai? Number bhejo:\n{lines}")
+    return AWAIT_DPHOTO_INDEX
 
-async def resetpic_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if not context.args:
-        await update.message.reply_text("Usage: /resetpic <id>")
-        return
-    pid = context.args[0]
-    settings["start_photos"] = [p for p in settings["start_photos"] if p["id"] != pid]
-    save_data()
-    await update.message.reply_text("Photo removed!")
 
-async def setcaption_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+async def dphoto_index(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        idx = int(update.message.text.strip()) - 1
+        photos = data.get("welcome_photos", [])
+        if 0 <= idx < len(photos):
+            photos.pop(idx)
+            data["welcome_photos"] = photos
+            data["welcome_photo"] = photos[0] if photos else ""
+            save_data(data)
+            await update.message.reply_text("✅ Photo delete ho gayi!")
+        else:
+            await update.message.reply_text("❌ Galat number.")
+    except:
+        await update.message.reply_text("❌ Number sahi se bhejo.")
+    return ConversationHandler.END
+
+
+# ── /setcaption ───────────────────────────────────────────
+async def cmd_setcaption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
     text = " ".join(context.args)
     if not text:
-        await update.message.reply_text("Usage: /setcaption <text>")
+        await update.message.reply_text("📝 Usage: `/setcaption [caption]`", parse_mode="Markdown")
         return
-    settings["start_caption"] = text
-    save_data()
-    await update.message.reply_text("Caption set!")
+    data["welcome_caption"] = text
+    save_data(data)
+    await update.message.reply_text(f"✅ Caption set:\n{text}")
 
-async def setbutton_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /setbutton NAME url")
-        return
-    settings["start_buttons"].append({"name": context.args[0], "url": context.args[1]})
-    save_data()
-    await update.message.reply_text("Button added!")
 
-async def setreply_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    text = update.message.text.split(None, 1)[1] if len(update.message.text.split()) > 1 else ""
-    if "|" not in text:
-        await update.message.reply_text("Usage: /setreply keyword | reply")
+# ── /addbutton ────────────────────────────────────────────
+async def cmd_addbutton(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
         return
-    kw, reply = text.split("|", 1)
-    settings["auto_replies"][kw.strip()] = reply.strip()
-    save_data()
-    await update.message.reply_text(f"Auto reply set: `{kw.strip()}`", parse_mode="Markdown")
+    await update.message.reply_text("Button ka naam bhejo:")
+    return AWAIT_BUTTON_NAME
 
-async def delreply_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    kw = " ".join(context.args)
-    if kw in settings["auto_replies"]:
-        del settings["auto_replies"][kw]
-        save_data()
-        await update.message.reply_text("Deleted!")
-    else:
-        await update.message.reply_text("Keyword nahi mila.")
 
-async def listreplies_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    ar = settings.get("auto_replies", {})
-    if not ar:
-        await update.message.reply_text("Koi auto reply nahi.")
-        return
-    text = "*Auto Replies:*\n" + "\n".join(f"• `{k}` → {v}" for k, v in ar.items())
-    await update.message.reply_text(text, parse_mode="Markdown")
+async def addbutton_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["btn_name"] = update.message.text.strip()
+    await update.message.reply_text("Ab button ka URL bhejo:")
+    return AWAIT_BUTTON_URL
 
-async def uploadvoice_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if not context.args:
-        await update.message.reply_text("Usage: /uploadVoice <keyword>")
-        return
-    if not update.message.reply_to_message or not update.message.reply_to_message.voice:
-        await update.message.reply_text("Voice reply mein bhejo!")
-        return
-    kw  = " ".join(context.args).lower()
-    fid = update.message.reply_to_message.voice.file_id
-    vid = str(uuid.uuid4())[:8]
-    settings["voice_messages"][vid] = {"keyword": kw, "file_id": fid, "id": vid}
-    sync_voices(settings["voice_messages"])
-    save_data()
-    await update.message.reply_text(f"Voice saved! Keyword: `{kw}` ID: `{vid}`", parse_mode="Markdown")
 
-async def revoice_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if not context.args:
-        await update.message.reply_text("Usage: /revoice <id>")
-        return
-    vid = context.args[0]
-    if vid in settings["voice_messages"]:
-        del settings["voice_messages"][vid]
-        sync_voices(settings["voice_messages"])
-        save_data()
-        await update.message.reply_text("Deleted!")
-    else:
-        await update.message.reply_text("ID nahi mila.")
+async def addbutton_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url  = update.message.text.strip()
+    name = context.user_data.get("btn_name", "Button")
+    data.setdefault("welcome_buttons", []).append({"name": name, "url": url})
+    save_data(data)
+    await update.message.reply_text(f"✅ Button add ho gaya!\nNaam: {name}\nURL: {url}")
+    return ConversationHandler.END
 
-async def vlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    vm = settings.get("voice_messages", {})
-    if not vm:
-        await update.message.reply_text("Koi voice nahi.")
-        return
-    text = "*Voices:*\n" + "\n".join(f"• `{vid}` — `{vd['keyword']}`" for vid, vd in vm.items())
-    await update.message.reply_text(text, parse_mode="Markdown")
 
-async def addcoupon_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /addcoupon CODE coins [uses]")
+# ── /delbutton ────────────────────────────────────────────
+async def cmd_delbutton(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
         return
-    code     = context.args[0].upper()
-    coins    = int(context.args[1])
-    max_uses = int(context.args[2]) if len(context.args) > 2 else 999
-    settings["coupons"][code] = {"coins": coins, "max_uses": max_uses, "used_by": []}
-    save_data()
-    await update.message.reply_text(f"Coupon `{code}` created! {coins} coins.", parse_mode="Markdown")
+    buttons = data.get("welcome_buttons", [])
+    if not buttons:
+        await update.message.reply_text("Koi button nahi hai.")
+        return
+    kb = [[InlineKeyboardButton(f"❌ {b['name']}", callback_data=f"delbtn_{i}")]
+          for i, b in enumerate(buttons)]
+    await update.message.reply_text("Kaunsa button delete karna hai?",
+                                     reply_markup=InlineKeyboardMarkup(kb))
 
-async def delcoupon_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if not context.args:
-        await update.message.reply_text("Usage: /delcoupon CODE")
-        return
-    code = context.args[0].upper()
-    if code in settings["coupons"]:
-        del settings["coupons"][code]
-        save_data()
-        await update.message.reply_text("Deleted!")
-    else:
-        await update.message.reply_text("Coupon nahi mila.")
 
-async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Broadcast message reply mein bhejo!")
+async def delbutton_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if not is_admin(q.from_user.id):
         return
-    msg = update.message.reply_to_message
-    ok  = 0; fail = 0
-    for uid in user_data:
+    idx = int(q.data.split("_")[1])
+    buttons = data.get("welcome_buttons", [])
+    if 0 <= idx < len(buttons):
+        name = buttons.pop(idx)["name"]
+        data["welcome_buttons"] = buttons
+        save_data(data)
+        await q.edit_message_text(f"✅ Button '{name}' delete ho gaya!")
+
+
+# ── /bcast ────────────────────────────────────────────────
+async def cmd_bcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    text = " ".join(context.args)
+    if not text:
+        await update.message.reply_text("📝 Usage: `/bcast [message]`", parse_mode="Markdown")
+        return
+    users = data.get("users", [])
+    sent = failed = 0
+    for uid in users:
         try:
-            await msg.forward(int(uid))
-            ok += 1
-            await asyncio.sleep(0.05)
+            await context.bot.send_message(int(uid), text)
+            sent += 1
         except:
-            fail += 1
-    await update.message.reply_text(f"Broadcast done! {ok} success, {fail} failed")
+            failed += 1
+    await update.message.reply_text(f"📢 Broadcast:\n✅ Sent: {sent}\n❌ Failed: {failed}")
 
-async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+
+# ── /chaton /chatoff ──────────────────────────────────────
+async def cmd_chaton(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cid = str(update.effective_chat.id)
+    lst = data.setdefault("chat_disabled", [])
+    if cid in lst:
+        lst.remove(cid)
+        save_data(data)
+    await update.message.reply_text("✅ Chat ON! Main ab jawab dungi 💬")
+
+
+async def cmd_chatoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cid = str(update.effective_chat.id)
+    lst = data.setdefault("chat_disabled", [])
+    if cid not in lst:
+        lst.append(cid)
+        save_data(data)
+    await update.message.reply_text("🔇 Chat OFF. Main chup rahungi.")
+
+
+# ── /topgroups ────────────────────────────────────────────
+async def cmd_topgroups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    counts = data.get("group_msg_count", {})
+    top = sorted(counts.items(), key=lambda x: x[1].get("count", 0), reverse=True)[:10]
+    if not top:
+        await update.message.reply_text("Abhi koi group data nahi hai.")
+        return
+    medals = ["🥇", "🥈", "🥉"] + [f"{i}." for i in range(4, 11)]
+    lines = [f"{medals[i]} {info['title']}" for i, (_, info) in enumerate(top)]
     text = (
-        f"*Bot Status*\n\n"
-        f"{settings.get('status_caption', '')}\n\n"
-        f"Users: `{len(user_data)}`\n"
-        f"Groups: `{len(group_data)}`\n"
-        f"Active VCs: `{len(active_vc_chats)}`"
+        f"🏆 *Top 10 Groups*\n"
+        f"────────────────────\n"
+        + "\n".join(lines) +
+        f"\n────────────────────\n"
+        f"Top 10 Via @{BOT_NAME}"
     )
+    photo = data.get("leaderboard_photo", "")
+    if photo:
+        try:
+            await update.message.reply_photo(photo=photo, caption=text, parse_mode="Markdown")
+            return
+        except:
+            pass
     await update.message.reply_text(text, parse_mode="Markdown")
 
-async def userlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    data = "\n".join(user_data.keys()).encode()
-    await update.message.reply_document(document=io.BytesIO(data), filename="users.txt")
 
-async def grouplist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    data = "\n".join(group_data.keys()).encode()
-    await update.message.reply_document(document=io.BytesIO(data), filename="groups.txt")
+# ── /setlphoto ────────────────────────────────────────────
+async def cmd_setlphoto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    if update.message.photo:
+        data["leaderboard_photo"] = update.message.photo[-1].file_id
+        save_data(data)
+        await update.message.reply_text("✅ Leaderboard photo set ho gaya!")
+    else:
+        await update.message.reply_text("📸 Photo ke saath /setlphoto bhejo.")
 
-# ── Message Handlers ─────────────────────────────────────
 
+# ── /joinvc ───────────────────────────────────────────────
+async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    await update.message.reply_text("🎤 VC join karne ki koshish kar rahi hoon...")
+    ok = await join_vc(update.effective_chat.id, bot_app=context.application,
+                       ai_func=get_ai_response)
+    if ok:
+        await update.message.reply_text("✅ Dream Girl VC mein aa gayi! 🎙️")
+    else:
+        await update.message.reply_text(
+            "❌ VC join nahi ho saka.\n\n"
+            "• Group mein Voice Chat active hai?\n"
+            "• Bot admin hai?\n"
+            "• PYROGRAM_SESSION ya /addasis session set hai?"
+        )
+
+
+# ── /leavevc ──────────────────────────────────────────────
+async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    ok = await leave_vc(update.effective_chat.id)
+    if ok:
+        await update.message.reply_text("👋 Dream Girl VC se chali gayi!")
+    else:
+        await update.message.reply_text("Bot VC mein nahi thi.")
+
+
+# ── /addasis ──────────────────────────────────────────────
+async def cmd_addasis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    session = " ".join(context.args).strip()
+    if not session:
+        await update.message.reply_text(
+            "📝 Usage: `/addasis [session_string]`",
+            parse_mode="Markdown"
+        )
+        return
+    add_assistant(session)
+    await update.message.reply_text("✅ Assistant session add ho gaya!")
+
+
+# ── /removeasis ───────────────────────────────────────────
+async def cmd_removeasis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Sirf admin kar sakta hai.")
+        return
+    remove_assistant()
+    await update.message.reply_text("✅ Assistant session hata diya gaya.")
+
+
+# ── Message Handlers ──────────────────────────────────────
 async def handle_text_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
     msg  = update.message
     if not user or not msg or not msg.text:
         return
-    get_user_record(user.id)
+
     cid = str(chat.id)
+
     if chat.type in ("group", "supergroup"):
-        group_data[cid] = {"title": chat.title}
-        if not chat_enabled.get(cid, True):
+        track_group(cid, chat.title or "Unknown")
+        if cid in data.get("chat_disabled", []):
             return
-    for kw, reply in settings.get("auto_replies", {}).items():
-        if kw.lower() in msg.text.lower():
-            await msg.reply_text(reply)
-            return
-    if chat.type in ("private", "group", "supergroup"):
-        display  = user.first_name or "Pyaare"
-        response = await get_ai_response(msg.text, display, user.id)
-        if int(cid) in active_vc_chats:
-            await speak_in_vc(int(cid), response)
-        await msg.reply_text(f"🌸 {response}")
+
+    display  = user.first_name or "Pyaare"
+    response = await get_ai_response(msg.text, display, user.id)
+
+    if chat.id in active_vc_chats:
+        await speak_in_vc(chat.id, response)
+
+    await msg.reply_text(f"🌸 {response}")
+
 
 async def handle_voice_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
-    if not user: return
-    if chat.type in ("group", "supergroup") and not chat_enabled.get(str(chat.id), True):
+    msg  = update.message
+    if not user or not msg:
         return
-    await handle_voice_message(update, context, settings, ai_func=get_ai_response)
-
-# ══════════════════════════════════════════════════════════
-#   MAIN
-# ══════════════════════════════════════════════════════════
-
-async def main():
-    load_data()
+    if chat.type in ("group", "supergroup") and \
+       str(chat.id) in data.get("chat_disabled", []):
+        return
     try:
-        await start_vc_system()
-        logger.info("VC system ready!")
+        file        = await msg.voice.get_file()
+        audio_bytes = await file.download_as_bytearray()
+        text        = stt_from_bytes(bytes(audio_bytes)) or "Suno mujhe"
+        display     = user.first_name or "Pyaare"
+        response    = await get_ai_response(text, display, user.id)
+        if chat.id in active_vc_chats:
+            await speak_in_vc(chat.id, response)
+        await msg.reply_text(f"🌸 {response}")
     except Exception as e:
-        logger.error(f"VC system error: {e}")
+        logger.error(f"[VOICE] {e}")
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start",        start_cmd))
-    app.add_handler(CommandHandler("help",         help_cmd))
-    app.add_handler(CommandHandler("joinvc",       joinvc_cmd))
-    app.add_handler(CommandHandler("leavevc",      leavevc_cmd))
-    app.add_handler(CommandHandler("daily",        daily_cmd))
-    app.add_handler(CommandHandler("weekly",       weekly_cmd))
-    app.add_handler(CommandHandler("coupon",       coupon_cmd))
-    app.add_handler(CommandHandler("profile",      profile_cmd))
-    app.add_handler(CommandHandler("top",          top_cmd))
-    app.add_handler(CommandHandler("gfbf",         gfbf_cmd))
-    app.add_handler(CommandHandler("bff",          bff_cmd))
-    app.add_handler(CommandHandler("chaton",       chaton_cmd))
-    app.add_handler(CommandHandler("chatoff",      chatoff_cmd))
-    app.add_handler(CommandHandler("setphoto",     setphoto_cmd))
-    app.add_handler(CommandHandler("photolist",    photolist_cmd))
-    app.add_handler(CommandHandler("resetpic",     resetpic_cmd))
-    app.add_handler(CommandHandler("setcaption",   setcaption_cmd))
-    app.add_handler(CommandHandler("setbutton",    setbutton_cmd))
-    app.add_handler(CommandHandler("setreply",     setreply_cmd))
-    app.add_handler(CommandHandler("delreply",     delreply_cmd))
-    app.add_handler(CommandHandler("listreplies",  listreplies_cmd))
-    app.add_handler(CommandHandler("uploadVoice",  uploadvoice_cmd))
-    app.add_handler(CommandHandler("revoice",      revoice_cmd))
-    app.add_handler(CommandHandler("vlist",        vlist_cmd))
-    app.add_handler(CommandHandler("addcoupon",    addcoupon_cmd))
-    app.add_handler(CommandHandler("delcoupon",    delcoupon_cmd))
-    app.add_handler(CommandHandler("broadcast",    broadcast_cmd))
-    app.add_handler(CommandHandler("status",       status_cmd))
-    app.add_handler(CommandHandler("userlist",     userlist_cmd))
-    app.add_handler(CommandHandler("grouplist",    grouplist_cmd))
+# ── Main ──────────────────────────────────────────────────
+async def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    addbutton_conv = ConversationHandler(
+        entry_points=[CommandHandler("addbutton", cmd_addbutton)],
+        states={
+            AWAIT_BUTTON_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, addbutton_name)],
+            AWAIT_BUTTON_URL:  [MessageHandler(filters.TEXT & ~filters.COMMAND, addbutton_url)],
+        },
+        fallbacks=[]
+    )
+
+    dphoto_conv = ConversationHandler(
+        entry_points=[CommandHandler("dphoto", cmd_dphoto)],
+        states={
+            AWAIT_DPHOTO_INDEX: [MessageHandler(filters.TEXT & ~filters.COMMAND, dphoto_index)],
+        },
+        fallbacks=[]
+    )
+
+    app.add_handler(addbutton_conv)
+    app.add_handler(dphoto_conv)
+    app.add_handler(CallbackQueryHandler(delbutton_cb, pattern=r"^delbtn_"))
+
+    for cmd, func in [
+        ("start",      cmd_start),
+        ("gfbf",       cmd_gfbf),
+        ("bff",        cmd_bff),
+        ("couple",     cmd_couple),
+        ("setphoto",   cmd_setphoto),
+        ("addphoto",   cmd_addphoto),
+        ("setcaption", cmd_setcaption),
+        ("setcaptoin", cmd_setcaption),
+        ("delbutton",  cmd_delbutton),
+        ("debutton",   cmd_delbutton),
+        ("bcast",      cmd_bcast),
+        ("chaton",     cmd_chaton),
+        ("chatoff",    cmd_chatoff),
+        ("topgroups",  cmd_topgroups),
+        ("topgruops",  cmd_topgroups),
+        ("setlphoto",  cmd_setlphoto),
+        ("joinvc",     cmd_joinvc),
+        ("leavevc",    cmd_leavevc),
+        ("addasis",    cmd_addasis),
+        ("removeasis", cmd_removeasis),
+        ("aaddasis",   cmd_removeasis),
+    ]:
+        app.add_handler(CommandHandler(cmd, func))
+
     app.add_handler(MessageHandler(filters.VOICE, handle_voice_msg))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_msg))
 
-    logger.info("Bot starting...")
+    await app.bot.set_my_commands([
+        BotCommand("start",      "Bot shuru karo"),
+        BotCommand("gfbf",       "GF/BF card banao"),
+        BotCommand("bff",        "BFF card banao"),
+        BotCommand("couple",     "Couple card banao"),
+        BotCommand("topgroups",  "Top 10 groups leaderboard"),
+        BotCommand("chaton",     "Chat reply ON"),
+        BotCommand("chatoff",    "Chat reply OFF"),
+        BotCommand("joinvc",     "VC join karo [admin]"),
+        BotCommand("leavevc",    "VC leave karo [admin]"),
+        BotCommand("setphoto",   "Welcome photo set [admin]"),
+        BotCommand("addphoto",   "Photo add karo [admin]"),
+        BotCommand("dphoto",     "Photo delete karo [admin]"),
+        BotCommand("setcaption", "Welcome caption set [admin]"),
+        BotCommand("addbutton",  "Button add karo [admin]"),
+        BotCommand("delbutton",  "Button delete karo [admin]"),
+        BotCommand("setlphoto",  "Leaderboard photo set [admin]"),
+        BotCommand("bcast",      "Broadcast [admin]"),
+        BotCommand("addasis",    "VC assistant add [admin]"),
+        BotCommand("removeasis", "VC assistant hatao [admin]"),
+    ])
+
+    logger.info("Dream Girl Bot starting...")
+    await start_vc_system()
     try:
         await app.initialize()
         await app.start()
@@ -576,6 +564,7 @@ async def main():
         await app.stop()
         await app.shutdown()
         await stop_vc_system()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
