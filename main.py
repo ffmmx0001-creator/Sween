@@ -9,31 +9,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN  = os.getenv("BOT_TOKEN", "")
-ADMIN_ID   = int(os.getenv("ADMIN_ID", "0"))
-GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
-API_ID     = int(os.getenv("API_ID", "0"))
-API_HASH   = os.getenv("API_HASH", "")
+BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
+ADMIN_ID          = int(os.getenv("ADMIN_ID", "0"))
+GEMINI_KEY        = os.getenv("GEMINI_API_KEY", "")
+API_ID            = int(os.getenv("API_ID", "0"))
+API_HASH          = os.getenv("API_HASH", "")
+PYROGRAM_SESSION  = os.getenv("PYROGRAM_SESSION", "")
 
 genai.configure(api_key=GEMINI_KEY)
 gemini = genai.GenerativeModel("gemini-1.5-flash")
 
-# ── Assistant client globals ──────────────────────────────
 _pyro_client  = None
 _calls_client = None
 active_chats: set = set()
-
-
-async def get_ai_response(text: str) -> str:
-    try:
-        resp = gemini.generate_content(
-            f"Tum ek cute Hinglish girlfriend AI ho. "
-            f"Short, warm jawab do. User bola: {text}"
-        )
-        return resp.text.strip()
-    except Exception as e:
-        logger.error(f"[AI] {e}")
-        return "Hiii~ thoda baad mein baat karte hain!"
 
 
 async def make_tts_wav(text: str) -> str:
@@ -58,9 +46,8 @@ async def make_tts_wav(text: str) -> str:
 
 async def _start_assistant():
     global _pyro_client, _calls_client
-    session = os.getenv("PYROGRAM_SESSION", "")
-    if not session:
-        logger.error("[VC] PYROGRAM_SESSION variable nahi set hai!")
+    if not PYROGRAM_SESSION:
+        logger.error("[VC] PYROGRAM_SESSION Railway Variable mein set nahi hai!")
         return False
     try:
         from pyrogram import Client
@@ -69,7 +56,7 @@ async def _start_assistant():
             "assistant",
             api_id=API_ID,
             api_hash=API_HASH,
-            session_string=session
+            session_string=PYROGRAM_SESSION
         )
         _calls_client = PyTgCalls(_pyro_client)
         await _pyro_client.start()
@@ -81,17 +68,14 @@ async def _start_assistant():
         return False
 
 
-# ── /start ────────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hiii! Main Dream Girl hoon.\n\n"
         "/joinvc -- Mujhe Voice Chat mein bulao\n"
-        "/leavevc -- Mujhe VC se hatao\n"
-        "/addasis -- Assistant session set karo [admin]\n"
+        "/leavevc -- Mujhe VC se hatao"
     )
 
 
-# ── /joinvc ───────────────────────────────────────────────
 async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -106,19 +90,18 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not ok:
             await update.message.reply_text(
                 "Assistant session nahi mila!\n"
-                "Admin se kaho: /addasis [session_string]"
+                "Railway Variables mein PYROGRAM_SESSION check karo."
             )
             return
 
     try:
         from pytgcalls.types import MediaStream
         wav = await make_tts_wav(
-            "Hiii everyone! Main aa gayi Dream Girl! Agar mujhse baat karni ho toh mera naam lo!"
+            "Hiii everyone! Main aa gayi Dream Girl!"
         )
         if wav and os.path.exists(wav):
             stream = MediaStream(wav)
         else:
-            await update.message.reply_text("TTS error, lekin VC join karne ki koshish...")
             stream = MediaStream(audio_path="/dev/zero")
 
         await _calls_client.join_group_call(chat_id, stream)
@@ -133,11 +116,10 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Check karo:\n"
             "- Group mein Voice Chat active hai?\n"
             "- Bot ko admin banaya?\n"
-            "- PYROGRAM_SESSION sahi hai?"
+            "- PYROGRAM_SESSION Railway Variable mein sahi hai?"
         )
 
 
-# ── /leavevc ──────────────────────────────────────────────
 async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -156,42 +138,24 @@ async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("VC chhod di!")
 
 
-# ── /addasis ──────────────────────────────────────────────
-async def cmd_addasis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("Sirf admin kar sakta hai.")
-        return
-    session = " ".join(context.args).strip()
-    if not session:
-        await update.message.reply_text(
-            "Usage: /addasis [session_string]\n\n"
-            "Ya Railway Variables mein PYROGRAM_SESSION daalo."
-        )
-        return
-    os.environ["PYROGRAM_SESSION"] = session
-    global _pyro_client, _calls_client
-    _pyro_client  = None
-    _calls_client = None
-    await update.message.reply_text("Session save ho gaya! Ab /joinvc try karo.")
-
-
-# ── Main ──────────────────────────────────────────────────
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start",    cmd_start))
-    app.add_handler(CommandHandler("joinvc",   cmd_joinvc))
-    app.add_handler(CommandHandler("leavevc",  cmd_leavevc))
-    app.add_handler(CommandHandler("addasis",  cmd_addasis))
+    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("joinvc",  cmd_joinvc))
+    app.add_handler(CommandHandler("leavevc", cmd_leavevc))
 
     await app.bot.set_my_commands([
         BotCommand("start",   "Bot shuru karo"),
         BotCommand("joinvc",  "VC join karo"),
         BotCommand("leavevc", "VC leave karo"),
-        BotCommand("addasis", "Assistant session set karo [admin]"),
     ])
 
     logger.info("Dream Girl Bot starting...")
+
+    # Bot start hote hi assistant bhi start karo
+    await _start_assistant()
+
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
