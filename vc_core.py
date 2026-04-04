@@ -4,8 +4,7 @@ import speech_recognition as sr
 from pydub import AudioSegment
 from pyrogram import Client
 from pytgcalls import PyTgCalls
-from pytgcalls.types.input_stream import AudioPiped
-
+from pytgcalls.types import AudioPiped
 logger = logging.getLogger(__name__)
 
 API_ID           = int(os.getenv("API_ID", "0"))
