@@ -1,6 +1,6 @@
 python-telegram-bot==20.7
 pyrogram==2.0.106
-py-tgcalls==2.2.11
+pytgcalls==0.9.18
 edge-tts
 pydub
 SpeechRecognition
