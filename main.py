@@ -46,17 +46,27 @@ async def make_tts_wav(text: str) -> str:
 
 async def _start_assistant():
     global _pyro_client, _calls_client
-    if not PYROGRAM_SESSION:
-        logger.error("[VC] PYROGRAM_SESSION Railway Variable mein set nahi hai!")
+    session = os.getenv("PYROGRAM_SESSION", "")
+    logger.info(f"[VC] Session length: {len(session)} chars")
+    logger.info(f"[VC] API_ID: {API_ID}")
+    logger.info(f"[VC] API_HASH length: {len(API_HASH)} chars")
+    if not session:
+        logger.error("[VC] PYROGRAM_SESSION empty hai!")
+        return False
+    if API_ID == 0:
+        logger.error("[VC] API_ID set nahi hai!")
+        return False
+    if not API_HASH:
+        logger.error("[VC] API_HASH set nahi hai!")
         return False
     try:
         from pyrogram import Client
         from pytgcalls import PyTgCalls
-        _pyro_client  = Client(
+        _pyro_client = Client(
             "assistant",
             api_id=API_ID,
             api_hash=API_HASH,
-            session_string=PYROGRAM_SESSION
+            session_string=session
         )
         _calls_client = PyTgCalls(_pyro_client)
         await _pyro_client.start()
