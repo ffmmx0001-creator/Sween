@@ -8,23 +8,26 @@ logger = logging.getLogger(__name__)
 API_ID           = int(os.getenv("API_ID", "0"))
 API_HASH         = os.getenv("API_HASH", "")
 BOT_TOKEN        = os.getenv("BOT_TOKEN", "")
-PYROGRAM_SESSION = os.getenv("PYROGRAM_SESSION", "")
 
 active_vc_chats: set = set()
 vc_listening:    dict = {}
 
 _assistant_session: str = ""
+_assistant_client = None
+_assistant_calls  = None
 
 
 def add_assistant(session_string: str):
     global _assistant_session
-    _assistant_session = session_string
+    _assistant_session = session_string.strip()
     logger.info("[VC] Assistant session saved")
 
 
 def remove_assistant():
-    global _assistant_session
+    global _assistant_session, _assistant_client, _assistant_calls
     _assistant_session = ""
+    _assistant_client  = None
+    _assistant_calls   = None
     logger.info("[VC] Assistant session removed")
 
 
@@ -102,23 +105,117 @@ def stt_from_bytes(audio_bytes: bytes) -> str:
         return ""
 
 
+async def _get_or_create_calls():
+    global _assistant_client, _assistant_calls
+    if not _assistant_session:
+        return None
+    if _assistant_calls is not None:
+        return _assistant_calls
+    try:
+        from pyrogram import Client
+        from pytgcalls import PyTgCalls
+        _assistant_client = Client(
+            "assistant_vc",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            session_string=_assistant_session
+        )
+        _assistant_calls = PyTgCalls(_assistant_client)
+        await _assistant_client.start()
+        await _assistant_calls.start()
+        logger.info("[VC] Assistant client started")
+        return _assistant_calls
+    except Exception as e:
+        logger.error(f"[VC] Assistant start error: {e}")
+        return None
+
+
 async def join_vc(chat_id: int, bot_app=None, ai_func=None) -> bool:
-    logger.warning("[VC] pytgcalls not installed -- VC disabled")
-    return False
+    try:
+        calls = await _get_or_create_calls()
+        if calls is None:
+            logger.error("[VC] No assistant session. Use /addasis first.")
+            return False
+        if chat_id in active_vc_chats:
+            return False
+        from pytgcalls.types import AudioPiped
+        wav = make_tts_wav(
+            "Hiii everyone! Main aa gayi Dream Girl! "
+            "Agar mujhse baat karni ho toh mera naam lo!"
+        )
+        try:
+            if wav and os.path.exists(wav):
+                await calls.join_group_call(chat_id, AudioPiped(wav))
+            else:
+                await calls.join_group_call(chat_id, AudioPiped("/dev/zero"))
+        except Exception as je:
+            logger.error(f"[VC] join_group_call: {je}")
+            return False
+        active_vc_chats.add(chat_id)
+        task = asyncio.create_task(_listen_loop(chat_id, bot_app, ai_func))
+        vc_listening[chat_id] = task
+        logger.info(f"[VC] Joined: {chat_id}")
+        return True
+    except Exception as e:
+        logger.error(f"[VC] Join error: {e}")
+        return False
 
 
 async def leave_vc(chat_id: int) -> bool:
-    active_vc_chats.discard(chat_id)
-    return False
+    try:
+        if chat_id not in active_vc_chats:
+            return False
+        await speak_in_vc(chat_id, "Bye bye everyone! Phir milenge!")
+        await asyncio.sleep(2)
+        task = vc_listening.pop(chat_id, None)
+        if task:
+            task.cancel()
+        if _assistant_calls:
+            await _assistant_calls.leave_group_call(chat_id)
+        active_vc_chats.discard(chat_id)
+        return True
+    except Exception as e:
+        logger.error(f"[VC] Leave error: {e}")
+        active_vc_chats.discard(chat_id)
+        return False
 
 
 async def speak_in_vc(chat_id: int, text: str) -> bool:
-    return False
+    try:
+        if chat_id not in active_vc_chats or _assistant_calls is None:
+            return False
+        from pytgcalls.types import AudioPiped
+        wav = make_tts_wav(text)
+        if not wav:
+            return False
+        await _assistant_calls.change_stream(chat_id, AudioPiped(wav))
+        return True
+    except Exception as e:
+        logger.error(f"[VC] Speak error: {e}")
+        return False
+
+
+async def _listen_loop(chat_id: int, bot_app, ai_func):
+    while chat_id in active_vc_chats:
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[VC] Loop error: {e}")
+            await asyncio.sleep(5)
 
 
 async def start_vc_system():
-    logger.info("[VC] VC system skipped")
+    logger.info("[VC] VC system ready. Use /addasis to set assistant session.")
 
 
 async def stop_vc_system():
-    pass
+    for cid in list(active_vc_chats):
+        await leave_vc(cid)
+    global _assistant_client
+    if _assistant_client:
+        try:
+            await _assistant_client.stop()
+        except:
+            pass
