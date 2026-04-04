@@ -1,8 +1,7 @@
 python-telegram-bot==20.7
 pyrogram==2.0.106
-py-tgcalls==0.9.5
+py-tgcalls==2.2.11
 edge-tts
 pydub
-SpeechRecognition
 google-generativeai
 ffmpeg-python
