@@ -1,13 +1,8 @@
 {
   "build": {
-    "builder": "NIXPACKS",
-    "nixpacksPlan": {
-      "providers": ["python"],
-      "phases": {
-        "setup": {
-          "nixPkgs": ["python310", "ffmpeg-headless", "gcc", "nodejs_20"]
-        }
-      }
-    }
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "python main.py"
   }
 }
