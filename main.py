@@ -13,8 +13,9 @@ API_ID           = int(os.getenv("API_ID", "0"))
 API_HASH         = os.getenv("API_HASH", "")
 PYROGRAM_SESSION = os.getenv("PYROGRAM_SESSION", "")
 
-genai.configure(api_key=GEMINI_KEY)
-gemini = genai.GenerativeModel("gemini-1.5-flash")
+from google import genai
+...
+gemini_client = genai.Client(api_key=GEMINI_KEY)
 
 _pyro_client  = None
 _calls_client = None
