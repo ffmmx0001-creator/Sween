@@ -291,35 +291,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-requirements.txt
-
-railway.json
-{
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "startCommand": "python main.py",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  }
-}
-Railway Variables (5 set karo)
-Variable	Value
-BOT_TOKEN	BotFather se
-GEMINI_API_KEY	Google AI Studio se
-API_ID	my.telegram.org se
-API_HASH	my.telegram.org se
-PYROGRAM_SESSION	Pyrogram session generator se (User account)
-Ek important step -- PYROGRAM_SESSION generate karna:
-
-telegram.tools pe jaao → Pyrogram select karo (Telethon nahi) → phone number dalo → OTP enter karo → jo lambi string aaye woh Railway mein paste karo.
-
-Koi error aaye toh Railway log paste karo -- fix kar dunga.
-
-1m ago
-Hii! Kya haal hai? Kuch banwana hai ya koi help chahiye?
-
-1m ago
-
-Enter instruction or question...
