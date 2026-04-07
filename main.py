@@ -7,7 +7,6 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=lo
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN        = os.getenv("BOT_TOKEN", "")
-ADMIN_ID         = int(os.getenv("ADMIN_ID", "0"))
 GEMINI_KEY       = os.getenv("GEMINI_API_KEY", "")
 API_ID           = int(os.getenv("API_ID", "0"))
 API_HASH         = os.getenv("API_HASH", "")
@@ -21,7 +20,6 @@ active_chats: set = set()
 listening_tasks: dict = {}
 
 
-# ── AI Response ──────────────────────────────────────────
 async def get_ai_response(text: str) -> str:
     try:
         prompt = (
@@ -39,7 +37,6 @@ async def get_ai_response(text: str) -> str:
         return "Hiii~ thoda baad mein baat karte hain!"
 
 
-# ── TTS -- text se WAV banao ─────────────────────────────
 async def make_tts_wav(text: str) -> str:
     import edge_tts
     from pydub import AudioSegment
@@ -59,7 +56,6 @@ async def make_tts_wav(text: str) -> str:
         return ""
 
 
-# ── STT -- voice se text banao ───────────────────────────
 def stt_from_bytes(audio_bytes: bytes) -> str:
     try:
         import speech_recognition as sr
@@ -80,7 +76,6 @@ def stt_from_bytes(audio_bytes: bytes) -> str:
         return ""
 
 
-# ── VC mein bolna ────────────────────────────────────────
 async def speak_in_vc(chat_id: int, text: str):
     try:
         if _calls_client is None or chat_id not in active_chats:
@@ -97,9 +92,8 @@ async def speak_in_vc(chat_id: int, text: str):
         logger.error(f"[SPEAK] {e}")
 
 
-# ── VC sunna -- loop ─────────────────────────────────────
 async def listen_loop(chat_id: int):
-    logger.info(f"[LISTEN] Starting listen loop for {chat_id}")
+    logger.info(f"[LISTEN] Started for chat {chat_id}")
     while chat_id in active_chats:
         try:
             await asyncio.sleep(1)
@@ -110,7 +104,6 @@ async def listen_loop(chat_id: int):
             await asyncio.sleep(3)
 
 
-# ── Assistant start ──────────────────────────────────────
 async def _start_assistant() -> bool:
     global _pyro_client, _calls_client
     if not PYROGRAM_SESSION:
@@ -141,7 +134,6 @@ async def _start_assistant() -> bool:
         return False
 
 
-# ── /start ────────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hiii! Main Dream Girl hoon!\n\n"
@@ -150,7 +142,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ── /joinvc ───────────────────────────────────────────────
 async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -160,28 +151,23 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("VC join kar rahi hoon...")
 
-    # Pehle assistant start karo
     if _calls_client is None:
         ok = await _start_assistant()
         if not ok:
             await update.message.reply_text(
-                "Assistant connect nahi hua!\n\n"
-                "Railway Variables check karo:\n"
-                "- PYROGRAM_SESSION\n- API_ID\n- API_HASH"
+                "Assistant connect nahi hua!\n\nRailway Variables check karo:\n- PYROGRAM_SESSION\n- API_ID\n- API_HASH"
             )
             return
 
     try:
-        # Step 1: Assistant ko group mein invite karo
         try:
-            await _pyro_client.add_chat_members(chat_id, (await _pyro_client.get_me()).id)
+            me = await _pyro_client.get_me()
+            await _pyro_client.add_chat_members(chat_id, me.id)
         except Exception:
-            pass  # Already member hai toh ignore karo
+            pass
 
-        # Step 2: Thoda wait karo
         await asyncio.sleep(2)
 
-        # Step 3: VC join karo
         from pytgcalls.types import MediaStream
         greeting = "Hiii everyone! Main aa gayi Dream Girl! Mera naam lo toh main jawab dungi!"
         wav = await make_tts_wav(greeting)
@@ -207,13 +193,12 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[VC] Join error: {e}")
         await update.message.reply_text(
             f"VC join nahi hua.\n\nError: {e}\n\n"
-            "Check karo:\n"
-            "- Group mein Voice Chat active hai?\n"
-            "- Assistant account ko group mein add karne ki permission hai?\n"
+            "Check karo:\n- Group mein Voice Chat active hai?\n"
+            "- Assistant account group member + admin (Manage Voice Chats) hai?\n"
             "- PYROGRAM_SESSION sahi hai?"
         )
 
-# ── /leavevc ──────────────────────────────────────────────
+
 async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -237,7 +222,6 @@ async def cmd_leavevc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("VC chhod di!")
 
 
-# ── Voice message handler ─────────────────────────────────
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -261,7 +245,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[VOICE_MSG] {e}")
 
 
-# ── Text message handler ──────────────────────────────────
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -279,7 +262,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(response)
 
 
-# ── Main ──────────────────────────────────────────────────
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -309,3 +291,35 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+requirements.txt
+
+railway.json
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "python main.py",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
+Railway Variables (5 set karo)
+Variable	Value
+BOT_TOKEN	BotFather se
+GEMINI_API_KEY	Google AI Studio se
+API_ID	my.telegram.org se
+API_HASH	my.telegram.org se
+PYROGRAM_SESSION	Pyrogram session generator se (User account)
+Ek important step -- PYROGRAM_SESSION generate karna:
+
+telegram.tools pe jaao → Pyrogram select karo (Telethon nahi) → phone number dalo → OTP enter karo → jo lambi string aaye woh Railway mein paste karo.
+
+Koi error aaye toh Railway log paste karo -- fix kar dunga.
+
+1m ago
+Hii! Kya haal hai? Kuch banwana hai ya koi help chahiye?
+
+1m ago
+
+Enter instruction or question...
