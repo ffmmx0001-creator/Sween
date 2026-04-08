@@ -493,28 +493,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-requirements.txt
 
-runtime.txt
-python-3.11.9
-railway.json
-{
-  "build": { "builder": "NIXPACKS" },
-  "deploy": {
-    "startCommand": "python main.py",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  }
-}
-Kya badla:
-
-Emoji bilkul nahi -- na AI reply mein, na bot messages mein
-Group mein bot thoda formal aur bahari tarah baat karti hai
-Private mein ghar jaisi, close, comfortable baat karti hai
-/chaton aur /chatoff commands alag hain (pehle /chat on tha jo kaam nahi karta tha)
-Railway Variables wahi hain: BOT_TOKEN, GEMINI_API_KEY, OWNER_ID
-
-3m ago
-Group me short me simple real ladki k tarha baat karegi like hui accha U kese ho ohr sbka reply kare gi short me ohr sawal ka sehi jawab degiiJust now
-
-Enter instruction or question...
