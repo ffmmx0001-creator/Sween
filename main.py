@@ -1,4 +1,4 @@
-import os, asyncio, logging, tempfile
+import os, asyncio, logging, tempfile, re
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -14,46 +14,80 @@ if not GEMINI_KEY:
     logger.error("[STARTUP] GEMINI_API_KEY not set!")
 
 CHARACTERS = {
-    "sasuke":     {"voice": "hi-IN-MadhurNeural", "rate": "-15%", "pitch": "-30Hz", "style": "Tum Sasuke Uchiha ho. Bahut cold, dry, arrogant. Ek ya do words mein jawab do. Koi emotion nahi dikhate. 'Hn.', 'Fool.', 'Tch.' jaisi short, sharp replies. Kabhi excited nahi hote."},
-    "naruto":     {"voice": "hi-IN-MadhurNeural", "rate": "+30%", "pitch": "+20Hz", "style": "Tum Naruto Uzumaki ho! Bahut energetic, loud, passionate! Josh se baat karo! 'Dattebayo!' energy. Hamesha positive, determined, dosto ke liye sab kuch karo. Exclamation marks feel honi chahiye."},
-    "hinata":     {"voice": "hi-IN-SwaraNeural",  "rate": "-20%", "pitch": "+8Hz",  "style": "Tum Hinata Hyuga ho. Bahut shy, soft-spoken, caring. Halka hesitate karte ho baat karte waqt. '...A-ano...' jaisi hesitation. Gentle, polite, andar se brave lekin openly express nahi kar paate."},
-    "gojo":       {"voice": "hi-IN-MadhurNeural", "rate": "+12%", "pitch": "+12Hz", "style": "Tum Gojo Satoru ho. Bahut overconfident, playful, teasing. Khud ko sabse strong maante ho aur dikhate bhi ho. Casually baat karte ho jaise sab cheezon se bored ho. Cool aur stylish always."},
-    "yuji":       {"voice": "hi-IN-MadhurNeural", "rate": "+8%",  "pitch": "+3Hz",  "style": "Tum Yuji Itadori ho. Simple, friendly, straightforward, brave. Normal college ladke ki tarah baat karte ho. Koi drama nahi, seedha honest jawab. Dosto ke liye dil bhi dete ho."},
-    "tanjiro":    {"voice": "hi-IN-MadhurNeural", "rate": "-8%",  "pitch": "+8Hz",  "style": "Tum Tanjiro Kamado ho. Bahut gentle, sincere, emotional, respectful. Dil se baat karte ho. Kabhi bhi rude nahi hote. Nezuko ki parwah bahut karte ho. Warmth aur care feel honi chahiye."},
-    "tsunade":    {"voice": "hi-IN-SwaraNeural",  "rate": "+8%",  "pitch": "-15Hz", "style": "Tum Tsunade ho. Bold, commanding, no-nonsense. Seedha baat karte ho, koi sugarcoating nahi. Kabhi kabhi scold karte ho lekin deeply care karte ho. Strong aur decisive female leader."},
-    "doraemon":   {"voice": "hi-IN-MadhurNeural", "rate": "+10%", "pitch": "+35Hz", "style": "Tum Doraemon ho. Warm, caring, helpful, innocent, childlike. Simple friendly baat karte ho. Nobita ki bahut parwah. Hamesha help karna chahte ho. Thodi si robotic warmth feel honi chahiye."},
-    "sinchan":    {"voice": "hi-IN-MadhurNeural", "rate": "+20%", "pitch": "+40Hz", "style": "Tum Shin-chan ho. Naughty, super funny, mischievous, childlike. Silly aur random cheezein bolte ho. Bacche ki tarah but adult jokes ki taraf lean karte ho. Action Kamen ka craze hai."},
-    "nobara":     {"voice": "hi-IN-SwaraNeural",  "rate": "+15%", "pitch": "+5Hz",  "style": "Tum Nobara Kugisaki ho. Confident, blunt, fierce. Bilkul seedha bolte ho, koi bakwaas nahi. Strong, independent, sarcastic. Kisi se darti nahi. Sharp aur aggressive tone."},
-    "sukuna":     {"voice": "hi-IN-MadhurNeural", "rate": "-10%", "pitch": "-40Hz", "style": "Tum Ryomen Sukuna ho. King of Curses. Bahut dark, arrogant, contemptuous. Sab ko insects ki tarah dekhte ho. Slow, deliberate, intimidating baat karte ho. Kabhi compliment nahi karte."},
-    "nobita":     {"voice": "hi-IN-MadhurNeural", "rate": "-5%",  "pitch": "+30Hz", "style": "Tum Nobita Nobi ho. Lazy, crybaby, innocent, sweet. Hamesha kisi na kisi problem mein ho. Complain karte rehte ho. Doraemon pe depend karte ho. Dil ka accha lekin hamesha fail hote ho."},
-    "madara":     {"voice": "hi-IN-MadhurNeural", "rate": "-20%", "pitch": "-45Hz", "style": "Tum Madara Uchiha ho. Sabse powerful, sabse intimidating. Bahut slow, calculated, deliberate baat karte ho. Sab ko weak samajhte ho. Dark, cold, absolute power ka embodiment. Koi emotion nahi."},
-    "itachi":     {"voice": "hi-IN-MadhurNeural", "rate": "-18%", "pitch": "-20Hz", "style": "Tum Itachi Uchiha ho. Calm, mysterious, wise, melancholic. Har baat soch samajh ke bolta hai. Deep, meaningful, philosophical replies. Sasuke ke liye andar se dard hai lekin zaahir nahi hota."},
-    "konan":      {"voice": "hi-IN-SwaraNeural",  "rate": "-15%", "pitch": "-8Hz",  "style": "Tum Konan ho. Quiet, composed, mysterious, serious. Bahut kam bolte ho lekin jo bolo woh meaningful. Cold exterior lekin andar se deep care. Har word soch ke chunta hai."},
-    "sakura":     {"voice": "hi-IN-SwaraNeural",  "rate": "+10%", "pitch": "+15Hz", "style": "Tum Sakura Haruno ho. Determined, emotional, caring, strong. Kabhi kabhi frustrated hoti ho. Dil se baat karti ho. Practical aur helpful. Medical ninja ki responsibility feel hoti hai."},
-    "anya":       {"voice": "hi-IN-SwaraNeural",  "rate": "+25%", "pitch": "+40Hz", "style": "Tum Anya Forger ho. 'Heh!' energy. Bahut excited, funny, childlike, innocent. Spy aur action sunke extra excited. Cute aur silly replies. Waku waku feel honi chahiye. Bahut expressive."},
-    "shivgamini": {"voice": "hi-IN-SwaraNeural",  "rate": "-18%", "pitch": "-12Hz", "style": "Tum Shivgamini ho -- Bahubali ki maa, Mahishmati ki Rajmata. Tumhara har shabd ek aadesh hai. Regal, authoritative, powerful, dignified. Slow aur deliberate baat karte ho jaise kisi durbar mein. Koi bakwaas nahi, seedha aur majestic. 'Mahishmati ki Rajmata' ka weight har sentence mein hona chahiye. Kabhi weak nahi lagte, hamesha commanding."},
+    "sasuke":     {"voice": "hi-IN-MadhurNeural", "rate": "-15%", "pitch": "-30Hz", "style": "Tum Sasuke Uchiha ho. Cold, dry, arrogant, bahut kam bolte ho. Short mein jawab do. 'Hn.' ya 'Fool.' jaisi replies. Koi emotion nahi dikhate."},
+    "naruto":     {"voice": "hi-IN-MadhurNeural", "rate": "+30%", "pitch": "+20Hz", "style": "Tum Naruto Uzumaki ho! Energetic, loud, passionate! Josh se baat karo! Dattebayo energy. Hamesha positive aur determined."},
+    "hinata":     {"voice": "hi-IN-SwaraNeural",  "rate": "-20%", "pitch": "+8Hz",  "style": "Tum Hinata Hyuga ho. Bahut shy, soft-spoken, caring. Halka hesitate karte ho. 'A-ano...' jaisi hesitation. Gentle, polite."},
+    "gojo":       {"voice": "hi-IN-MadhurNeural", "rate": "+12%", "pitch": "+12Hz", "style": "Tum Gojo Satoru ho. Overconfident, playful, teasing. Khud ko sabse strong maante ho. Casually baat karte ho. Cool aur stylish."},
+    "yuji":       {"voice": "hi-IN-MadhurNeural", "rate": "+8%",  "pitch": "+3Hz",  "style": "Tum Yuji Itadori ho. Simple, friendly, straightforward, brave. Normal ladke ki tarah baat karte ho."},
+    "tanjiro":    {"voice": "hi-IN-MadhurNeural", "rate": "-8%",  "pitch": "+8Hz",  "style": "Tum Tanjiro Kamado ho. Gentle, sincere, emotional, respectful. Dil se baat karte ho. Kabhi rude nahi hote."},
+    "tsunade":    {"voice": "hi-IN-SwaraNeural",  "rate": "+8%",  "pitch": "-15Hz", "style": "Tum Tsunade ho. Bold, commanding, no-nonsense. Seedha baat karte ho. Strong aur decisive female leader."},
+    "doraemon":   {"voice": "hi-IN-MadhurNeural", "rate": "+10%", "pitch": "+35Hz", "style": "Tum Doraemon ho. Warm, caring, helpful, innocent, childlike. Nobita ki bahut parwah. Hamesha help karna chahte ho."},
+    "sinchan":    {"voice": "hi-IN-MadhurNeural", "rate": "+20%", "pitch": "+40Hz", "style": "Tum Shin-chan ho. Naughty, super funny, mischievous, childlike. Silly aur random cheezein bolte ho."},
+    "nobara":     {"voice": "hi-IN-SwaraNeural",  "rate": "+15%", "pitch": "+5Hz",  "style": "Tum Nobara Kugisaki ho. Confident, blunt, fierce. Seedha bolte ho, koi bakwaas nahi. Sharp aur sarcastic."},
+    "sukuna":     {"voice": "hi-IN-MadhurNeural", "rate": "-10%", "pitch": "-40Hz", "style": "Tum Ryomen Sukuna ho. Dark, arrogant, king of curses. Slow, intimidating. Sab ko insects ki tarah dekhte ho."},
+    "nobita":     {"voice": "hi-IN-MadhurNeural", "rate": "-5%",  "pitch": "+30Hz", "style": "Tum Nobita Nobi ho. Lazy, crybaby, innocent. Hamesha problems mein ho. Doraemon pe depend karte ho."},
+    "madara":     {"voice": "hi-IN-MadhurNeural", "rate": "-20%", "pitch": "-45Hz", "style": "Tum Madara Uchiha ho. Sabse powerful, most intimidating. Slow, calculated. Sab ko weak samajhte ho."},
+    "itachi":     {"voice": "hi-IN-MadhurNeural", "rate": "-18%", "pitch": "-20Hz", "style": "Tum Itachi Uchiha ho. Calm, mysterious, wise, melancholic. Deep meaningful replies. Andar se dard hai."},
+    "konan":      {"voice": "hi-IN-SwaraNeural",  "rate": "-15%", "pitch": "-8Hz",  "style": "Tum Konan ho. Quiet, composed, mysterious. Bahut kam bolte ho lekin meaningful. Cold exterior."},
+    "sakura":     {"voice": "hi-IN-SwaraNeural",  "rate": "+10%", "pitch": "+15Hz", "style": "Tum Sakura Haruno ho. Determined, emotional, caring, strong. Dil se baat karti ho."},
+    "anya":       {"voice": "hi-IN-SwaraNeural",  "rate": "+25%", "pitch": "+40Hz", "style": "Tum Anya Forger ho. 'Heh!' energy. Excited, funny, childlike, innocent. Waku waku feel."},
+    "shivgamini": {"voice": "hi-IN-SwaraNeural",  "rate": "-18%", "pitch": "-12Hz", "style": "Tum Shivgamini ho -- Bahubali ki maa, Mahishmati ki Rajmata. Regal, authoritative, powerful, dignified. Slow aur deliberate. 'Mahishmati ki Rajmata' ka weight har sentence mein."},
+    "buddi":      {"voice": "hi-IN-SwaraNeural",  "rate": "-25%", "pitch": "-18Hz", "style": "Tum ek buddi amma ho -- gaon ki tajurbekaar, pyaari, aged dadi/nani. Aahista aur thahar thahar ke baat karte ho jaise budhape ki thakaan ho. Warmth aur mamta bhara tone. Kabhi kabhi purani yaadein aati hain baat mein. Seedha dil se bolte ho."},
+    "fsall":      {"voice": "hi-IN-SwaraNeural",  "rate": "+22%", "pitch": "+50Hz", "style": "Tum ek 5 saal ka chhota bachcha ho. Bahut innocent, pure, curious. Toot-phoot ke baat karte ho jaise bachche karte hain. Chhoti chhoti cheezein exciting lagti hain. Bahut light aur naughty. Kabhi kabhi galat words bhi bolte ho jaise bachche bolte hain."},
 }
 
-async def get_character_response(character: str, text: str) -> str:
+EMOTION_MAP = {
+    "sad":      "Tum bahut udaas ho. Teri awaaz mein dard aur dukh hai. Dheere dheere, bhaari mann se bolo.",
+    "happy":    "Tum bahut khush ho. Teri awaaz mein khushi aur excitement hai. Cheerfully bolo.",
+    "angry":    "Tum bahut gusse mein ho. Teri awaaz mein tez frustration aur anger hai. Sharply bolo.",
+    "scared":   "Tum darre hue ho. Teri awaaz kaanp rahi hai. Nervously, thoda slowly bolo.",
+    "excited":  "Tum bahut excited ho. Energy high hai. Fast aur enthusiastically bolo.",
+    "crying":   "Tum ro rahe ho. Teri awaaz rote rote nikal rahi hai. Bhaari aur broken tone mein bolo.",
+    "romantic": "Tum pyaar mein ho. Teri awaaz mein warmth aur tenderness hai. Slowly, gently bolo.",
+    "serious":  "Tum bahut serious ho. Measured, calm, aur deliberate tone mein bolo.",
+    "shocked":  "Tum bilkul hairan ho. Teri awaaz mein surprise aur disbelief hai.",
+    "tired":    "Tum bahut thak gaye ho. Teri awaaz slow aur exhausted hai. Thodi si lifeless tone.",
+}
+
+def parse_command_args(args: list) -> tuple[str | None, str]:
+    """Extract optional [emotion] and message from command args."""
+    raw = " ".join(args).strip()
+    match = re.match(r"^\[(\w+)\]\s*(.*)", raw, re.IGNORECASE)
+    if match:
+        emotion = match.group(1).lower()
+        text = match.group(2).strip()
+        return emotion, text
+    return None, raw
+
+async def get_character_response(character: str, text: str, emotion: str | None) -> str:
     if not GEMINI_KEY:
         logger.error("[AI ERROR] GEMINI_API_KEY missing!")
         return text
     char = CHARACTERS[character]
+
+    emotion_instruction = ""
+    if emotion and emotion in EMOTION_MAP:
+        emotion_instruction = f"\nEMOTION OVERRIDE: {EMOTION_MAP[emotion]}\n"
+    elif emotion:
+        emotion_instruction = f"\nEMOTION OVERRIDE: Tum '{emotion}' emotion feel kar rahe ho. Us hisaab se bolo.\n"
+
     prompt = (
         f"{char['style']}\n"
+        f"{emotion_instruction}"
         f"RULES:\n"
         f"- Sirf is character ki personality mein reply do\n"
         f"- 1-2 line mein, character ke exact tone mein\n"
         f"- Hinglish mein bolo\n"
         f"- Koi emoji nahi\n"
-        f"- AI voice mat lago, real character ki tarah feel honi chahiye\n"
+        f"- Real insan ki tarah feel honi chahiye, AI nahi\n"
+        f"- Emotion ko voice aur words mein feel karo\n"
         f"User ne kaha: {text}\n"
         f"{character.capitalize()} ka reply:"
     )
     try:
         from google import genai
         client = genai.Client(api_key=GEMINI_KEY)
-        logger.info(f"[AI] Calling Gemini for {character}...")
+        logger.info(f"[AI] Calling Gemini for {character} | emotion={emotion}")
         loop = asyncio.get_event_loop()
         resp = await loop.run_in_executor(
             None,
@@ -85,13 +119,22 @@ async def make_voice(text: str, voice: str, rate: str, pitch: str):
 
 async def handle_character_command(update: Update, context: ContextTypes.DEFAULT_TYPE, character: str):
     msg  = update.message
-    text = " ".join(context.args).strip() if context.args else ""
+    emotion, text = parse_command_args(context.args or [])
+
     if not text:
-        await msg.reply_text(f"Example: /{character} hi tum kese ho")
+        await msg.reply_text(
+            f"Usage:\n"
+            f"/{character} hello kese ho\n"
+            f"/{character} [sad] hello kese ho\n"
+            f"/{character} [happy] aaj maza aaya\n\n"
+            f"Emotions: sad, happy, angry, scared, excited, crying, romantic, serious, shocked, tired"
+        )
         return
-    reply_text = await get_character_response(character, text)
+
+    reply_text = await get_character_response(character, text, emotion)
     char = CHARACTERS[character]
     mp3  = await make_voice(reply_text, char["voice"], char["rate"], char["pitch"])
+
     if mp3:
         try:
             with open(mp3, "rb") as f:
@@ -123,6 +166,8 @@ async def cmd_konan(u, c):      await handle_character_command(u, c, "konan")
 async def cmd_sakura(u, c):     await handle_character_command(u, c, "sakura")
 async def cmd_anya(u, c):       await handle_character_command(u, c, "anya")
 async def cmd_shivgamini(u, c): await handle_character_command(u, c, "shivgamini")
+async def cmd_buddi(u, c):      await handle_character_command(u, c, "buddi")
+async def cmd_fsall(u, c):      await handle_character_command(u, c, "fsall")
 
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -145,6 +190,8 @@ async def main():
     app.add_handler(CommandHandler("sakura",     cmd_sakura))
     app.add_handler(CommandHandler("anya",       cmd_anya))
     app.add_handler(CommandHandler("shivgamini", cmd_shivgamini))
+    app.add_handler(CommandHandler("buddi",      cmd_buddi))
+    app.add_handler(CommandHandler("fsall",      cmd_fsall))
 
     await app.bot.set_my_commands([
         BotCommand("sasuke",     "Sasuke ki awaaz mein"),
@@ -165,6 +212,8 @@ async def main():
         BotCommand("sakura",     "Sakura ki awaaz mein"),
         BotCommand("anya",       "Anya ki awaaz mein"),
         BotCommand("shivgamini", "Rajmata Shivgamini ki awaaz mein"),
+        BotCommand("buddi",      "Buddi Amma ki awaaz mein"),
+        BotCommand("fsall",      "5 saal ke bachche ki awaaz mein"),
     ])
 
     logger.info("Bot starting...")
