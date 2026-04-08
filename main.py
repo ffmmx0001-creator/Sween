@@ -146,7 +146,7 @@ async def cmd_joinvc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if chat_id in active_chats:
-        await update.message.reply_text("Main pehle se VC mein hoon!")
+        await update.message.reply_text("😋Main pehle se VC mein hoon!")
         return
 
     await update.message.reply_text("VC join kar rahi hoon...")
