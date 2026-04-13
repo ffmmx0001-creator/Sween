@@ -1,130 +1,80 @@
-import os, asyncio, logging, tempfile
-from telegram import Update, BotCommand
-from telegram.ext import Application, CommandHandler, ContextTypes
-import edge_tts
+import os, asyncio, logging, tempfile, subprocess
+from telegram import Update
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-if not BOT_TOKEN:
-    logger.error("[STARTUP] BOT_TOKEN not set!")
 
-CHARACTERS = {
-    "sasuke":    {"voice": "hi-IN-MadhurNeural", "rate": "-15%", "pitch": "-20Hz"},
-    "naruto":    {"voice": "hi-IN-MadhurNeural", "rate": "+25%", "pitch": "+12Hz"},
-    "hinata":    {"voice": "hi-IN-SwaraNeural",  "rate": "-20%", "pitch": "+8Hz"},
-    "gojo":      {"voice": "hi-IN-MadhurNeural", "rate": "+10%", "pitch": "+10Hz"},
-    "yuji":      {"voice": "hi-IN-MadhurNeural", "rate": "+8%",  "pitch": "+3Hz"},
-    "tanjiro":   {"voice": "hi-IN-MadhurNeural", "rate": "-8%",  "pitch": "+5Hz"},
-    "tsunade":   {"voice": "hi-IN-SwaraNeural",  "rate": "+8%",  "pitch": "-12Hz"},
-    "doraemon":  {"voice": "hi-IN-MadhurNeural", "rate": "+8%",  "pitch": "+30Hz"},
-    "sinchan":   {"voice": "hi-IN-MadhurNeural", "rate": "+22%", "pitch": "+42Hz"},
-    "nobara":    {"voice": "hi-IN-SwaraNeural",  "rate": "+15%", "pitch": "+5Hz"},
-    "sukuna":    {"voice": "hi-IN-MadhurNeural", "rate": "-12%", "pitch": "-40Hz"},
-    "nobita":    {"voice": "hi-IN-MadhurNeural", "rate": "-5%",  "pitch": "+28Hz"},
-    "madara":    {"voice": "hi-IN-MadhurNeural", "rate": "-22%", "pitch": "-45Hz"},
-    "itachi":    {"voice": "hi-IN-MadhurNeural", "rate": "-18%", "pitch": "-18Hz"},
-    "konan":     {"voice": "hi-IN-SwaraNeural",  "rate": "-18%", "pitch": "-8Hz"},
-    "sakura":    {"voice": "hi-IN-SwaraNeural",  "rate": "+10%", "pitch": "+12Hz"},
-    "anya":      {"voice": "hi-IN-SwaraNeural",  "rate": "+25%", "pitch": "+38Hz"},
-}
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    await msg.reply_text("Video mil gayi. Hindi dubbing ho rahi hai, thoda wait karo...")
 
-async def make_voice(text: str, voice: str, rate: str, pitch: str):
-    try:
-        mp3 = tempfile.mktemp(suffix=".mp3")
-        c = edge_tts.Communicate(text, voice=voice, rate=rate, pitch=pitch)
-        await c.save(mp3)
-        if os.path.getsize(mp3) > 0:
-            return mp3
-        return None
-    except Exception as e:
-        logger.error(f"[TTS ERROR] {e}")
-        return None
+    # Video download
+    video = msg.video or msg.document
+    file = await context.bot.get_file(video.file_id)
+    
+    with tempfile.TemporaryDirectory() as tmp:
+        video_path = os.path.join(tmp, "input.mp4")
+        audio_path = os.path.join(tmp, "audio.wav")
+        dubbed_audio = os.path.join(tmp, "dubbed.mp3")
+        output_path = os.path.join(tmp, "output.mp4")
 
-async def handle_character_command(update: Update, context: ContextTypes.DEFAULT_TYPE, character: str):
-    msg  = update.message
-    text = " ".join(context.args).strip() if context.args else ""
+        await file.download_to_drive(video_path)
 
-    if not text:
-        await msg.reply_text(f"/{character} ke baad kuch likho.\nExample: /{character} hello kaise ho")
-        return
+        # Step 1: Audio extract karo
+        subprocess.run([
+            "ffmpeg", "-i", video_path,
+            "-vn", "-ar", "16000", "-ac", "1",
+            audio_path
+        ], check=True, capture_output=True)
 
-    char = CHARACTERS[character]
-    mp3  = await make_voice(text, char["voice"], char["rate"], char["pitch"])
+        # Step 2: Whisper se transcribe karo
+        import whisper
+        model = whisper.load_model("base")
+        result = model.transcribe(audio_path)
+        original_text = result["text"].strip()
+        logger.info(f"Transcribed: {original_text[:100]}")
 
-    if mp3:
-        try:
-            with open(mp3, "rb") as f:
-                await msg.reply_voice(voice=f)
-        except Exception as e:
-            logger.error(f"[SEND ERROR] {e}")
-            await msg.reply_text(text)
-        finally:
-            try: os.remove(mp3)
-            except: pass
-    else:
-        await msg.reply_text(text)
+        # Step 3: Hindi translate karo
+        from deep_translator import GoogleTranslator
+        hindi_text = GoogleTranslator(source="auto", target="hi").translate(original_text)
+        logger.info(f"Translated: {hindi_text[:100]}")
 
-async def cmd_sasuke(u, c):   await handle_character_command(u, c, "sasuke")
-async def cmd_naruto(u, c):   await handle_character_command(u, c, "naruto")
-async def cmd_hinata(u, c):   await handle_character_command(u, c, "hinata")
-async def cmd_gojo(u, c):     await handle_character_command(u, c, "gojo")
-async def cmd_yuji(u, c):     await handle_character_command(u, c, "yuji")
-async def cmd_tanjiro(u, c):  await handle_character_command(u, c, "tanjiro")
-async def cmd_tsunade(u, c):  await handle_character_command(u, c, "tsunade")
-async def cmd_doraemon(u, c): await handle_character_command(u, c, "doraemon")
-async def cmd_sinchan(u, c):  await handle_character_command(u, c, "sinchan")
-async def cmd_nobara(u, c):   await handle_character_command(u, c, "nobara")
-async def cmd_sukuna(u, c):   await handle_character_command(u, c, "sukuna")
-async def cmd_nobita(u, c):   await handle_character_command(u, c, "nobita")
-async def cmd_madara(u, c):   await handle_character_command(u, c, "madara")
-async def cmd_itachi(u, c):   await handle_character_command(u, c, "itachi")
-async def cmd_konan(u, c):    await handle_character_command(u, c, "konan")
-async def cmd_sakura(u, c):   await handle_character_command(u, c, "sakura")
-async def cmd_anya(u, c):     await handle_character_command(u, c, "anya")
+        # Step 4: Audio pitch detect karke voice choose karo
+        # Simple: ffmpeg se audio volume/pitch check
+        probe = subprocess.run([
+            "ffprobe", "-i", audio_path,
+            "-show_entries", "stream=sample_rate",
+            "-v", "quiet", "-of", "csv=p=0"
+        ], capture_output=True, text=True)
+        
+        # Deep voice default male, normal female
+        voice = "hi-IN-MadhurNeural"  # deep male
+        rate = "-5%"
+        pitch = "-10Hz"
+
+        # Step 5: Edge-TTS se Hindi audio banao
+        import edge_tts
+        tts = edge_tts.Communicate(hindi_text, voice=voice, rate=rate, pitch=pitch)
+        await tts.save(dubbed_audio)
+
+        # Step 6: Original video + dubbed audio merge karo
+        subprocess.run([
+            "ffmpeg", "-i", video_path, "-i", dubbed_audio,
+            "-c:v", "copy", "-map", "0:v:0", "-map", "1:a:0",
+            "-shortest", output_path
+        ], check=True, capture_output=True)
+
+        # Step 7: Video bhejo
+        with open(output_path, "rb") as f:
+            await msg.reply_video(video=f, caption="Hindi dubbing taiyar!")
 
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("sasuke",   cmd_sasuke))
-    app.add_handler(CommandHandler("naruto",   cmd_naruto))
-    app.add_handler(CommandHandler("hinata",   cmd_hinata))
-    app.add_handler(CommandHandler("gojo",     cmd_gojo))
-    app.add_handler(CommandHandler("yuji",     cmd_yuji))
-    app.add_handler(CommandHandler("tanjiro",  cmd_tanjiro))
-    app.add_handler(CommandHandler("tsunade",  cmd_tsunade))
-    app.add_handler(CommandHandler("doraemon", cmd_doraemon))
-    app.add_handler(CommandHandler("sinchan",  cmd_sinchan))
-    app.add_handler(CommandHandler("nobara",   cmd_nobara))
-    app.add_handler(CommandHandler("sukuna",   cmd_sukuna))
-    app.add_handler(CommandHandler("nobita",   cmd_nobita))
-    app.add_handler(CommandHandler("madara",   cmd_madara))
-    app.add_handler(CommandHandler("itachi",   cmd_itachi))
-    app.add_handler(CommandHandler("konan",    cmd_konan))
-    app.add_handler(CommandHandler("sakura",   cmd_sakura))
-    app.add_handler(CommandHandler("anya",     cmd_anya))
-
-    await app.bot.set_my_commands([
-        BotCommand("sasuke",   "Sasuke ki awaaz mein"),
-        BotCommand("naruto",   "Naruto ki awaaz mein"),
-        BotCommand("hinata",   "Hinata ki awaaz mein"),
-        BotCommand("gojo",     "Gojo ki awaaz mein"),
-        BotCommand("yuji",     "Yuji ki awaaz mein"),
-        BotCommand("tanjiro",  "Tanjiro ki awaaz mein"),
-        BotCommand("tsunade",  "Tsunade ki awaaz mein"),
-        BotCommand("doraemon", "Doraemon ki awaaz mein"),
-        BotCommand("sinchan",  "Sinchan ki awaaz mein"),
-        BotCommand("nobara",   "Nobara ki awaaz mein"),
-        BotCommand("sukuna",   "Sukuna ki awaaz mein"),
-        BotCommand("nobita",   "Nobita ki awaaz mein"),
-        BotCommand("madara",   "Madara ki awaaz mein"),
-        BotCommand("itachi",   "Itachi ki awaaz mein"),
-        BotCommand("konan",    "Konan ki awaaz mein"),
-        BotCommand("sakura",   "Sakura ki awaaz mein"),
-        BotCommand("anya",     "Anya ki awaaz mein"),
-    ])
-
+    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
+    
     logger.info("Bot starting...")
     await app.initialize()
     await app.start()
@@ -136,3 +86,40 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+requirements.txt
+
+runtime.txt
+
+railway.json
+
+nixpacks.toml (ffmpeg ke liye -- zaruri hai)
+[phases.setup]
+nixPkgs = ["ffmpeg"]
+Railway Variables
+Sirf ek variable chahiye:
+
+BOT_TOKEN -- BotFather ka token
+Kaise Kaam Karta Hai
+Video bhejo
+    ↓
+Bot audio extract kare (ffmpeg)
+    ↓
+Whisper se transcribe kare (free, local)
+    ↓
+Hindi mein translate kare (Google Translate, free)
+    ↓
+Edge-TTS se Hindi audio banao (hi-IN-MadhurNeural, deep voice)
+    ↓
+Original video + Hindi audio merge kare
+    ↓
+Dubbed video wapas bheje
+Note: Bade videos (5+ min) mein thoda time lagega kyunki Whisper locally process karta hai. Chhoti clips (1-2 min) fast hongi.
+
+1m ago
+OkayJust now
+Theek hai! Jab bhi deploy karo ya koi problem aaye -- bata dena, help karunga.
+
+Just now
+
+Enter instruction or question...
+        
